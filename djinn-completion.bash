@@ -1,9 +1,9 @@
-# Autocomplete Bash da DETRO CLI.
+# Autocomplete Bash do DjinnAI.
 
-_detro_completion() {
+_djinn_completion() {
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=($(compgen -W "start restart rebuild logs status stop clean execute hot-reload auto-remove worker help version" -- "${COMP_WORDS[1]}"))
     fi
 }
 
-complete -F _detro_completion detro
+complete -F _djinn_completion djinn djinnai

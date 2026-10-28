@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { startServer } from './server.js';
 
 function findProjectRoot(start) {
-  for (const marker of ['.detro', '.git', 'package.json']) {
+  for (const marker of ['.djinn', '.detro', '.git', 'package.json']) {
     for (let dir = start; ; dir = path.dirname(dir)) {
       if (existsSync(path.join(dir, marker))) return dir;
       if (path.dirname(dir) === dir) break;
@@ -18,7 +18,7 @@ function findProjectRoot(start) {
 }
 
 const projectDir = findProjectRoot(process.cwd());
-const appScript = [process.env.DETRO_APP_SCRIPT, 'appDev', 'app']
+const appScript = [process.env.DJINN_APP_SCRIPT ?? process.env.DETRO_APP_SCRIPT, 'appDev', 'app']
   .filter(Boolean)
   .map((name) => path.resolve(projectDir, name))
   .find((file) => existsSync(file)) ?? path.join(projectDir, 'appDev');
@@ -62,7 +62,7 @@ async function openAppWindow(url, onClose) {
 const args = process.argv.slice(2);
 
 if (['version', '--version', '-v'].includes(args[0])) {
-  console.log(`detro ${version}`);
+  console.log(`DjinnAI ${version}`);
 } else if (args.length > 0 && args[0] !== '--navegador') {
   spawn(appScript, args, { cwd: projectDir, stdio: 'inherit' })
     .on('error', (error) => {
@@ -71,11 +71,11 @@ if (['version', '--version', '-v'].includes(args[0])) {
     })
     .on('close', (code) => process.exit(code ?? 1));
 } else {
-  const { url, close } = await startServer({ projectDir, appScript, version, port: Number(process.env.DETRO_PORT) || 0 }).catch((error) => {
+  const { url, close } = await startServer({ projectDir, appScript, version, port: Number(process.env.DJINN_PORT ?? process.env.DETRO_PORT) || 0 }).catch((error) => {
     console.error(error.message);
     process.exit(1);
   });
-  console.log(`detro ${version} — ${projectDir}\n\n  ${url}\n\nAbra o endereço no navegador se quiser acompanhar por lá também. Feche a janela ou use Ctrl+C para encerrar.`);
+  console.log(`DjinnAI ${version} — ${projectDir}\n\n  ${url}\n\nAbra o endereço no navegador se quiser acompanhar por lá também. Feche a janela ou use Ctrl+C para encerrar.`);
   const quit = () => {
     close();
     process.exit(0);

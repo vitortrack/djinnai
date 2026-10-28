@@ -27,14 +27,18 @@ const APP_COMMANDS = [
 
 const FALLBACK_MODELS = [{ key: 'claude:default', name: 'Padrão', tag: 'Claude' }];
 
-const configPath = (projectDir) => path.join(projectDir, '.detro', 'config.json');
+const LEGACY_DIR = '.detro';
+const DATA_DIR = '.djinn';
+
+const dataDir = (projectDir) => path.join(projectDir, existsSync(path.join(projectDir, LEGACY_DIR)) && !existsSync(path.join(projectDir, DATA_DIR)) ? LEGACY_DIR : DATA_DIR);
+const configPath = (projectDir) => path.join(dataDir(projectDir), 'config.json');
 
 async function loadConfig(projectDir) {
   try {
     return JSON.parse(await readFile(configPath(projectDir), 'utf8'));
   } catch (error) {
     if (error.code === 'ENOENT') return {};
-    throw new Error(`.detro/config.json não é um JSON válido: ${error.message}`);
+    throw new Error(`${path.relative(projectDir, configPath(projectDir))} não é um JSON válido: ${error.message}`);
   }
 }
 
@@ -70,12 +74,12 @@ async function sessionContext(projectDir) {
   const git = (args) => promisify(execFile)('git', args, { cwd: projectDir, maxBuffer: 5e7 }).then(({ stdout }) => stdout.trim(), () => '');
   const [files, notes] = await Promise.all([
     git(['ls-files']),
-    readFile(path.join(projectDir, '.detro', 'contexto.md'), 'utf8').then((text) => text.trim(), () => ''),
+    readFile(path.join(dataDir(projectDir), 'contexto.md'), 'utf8').then((text) => text.trim(), () => ''),
   ]);
   const folders = [...new Set(files.split('\n').map((file) => file.split('/').slice(0, -1).slice(0, 4).join('/')).filter(Boolean))].sort();
   return [
     folders.length > 0 && `Pastas do projeto (até 4 níveis):\n${folders.slice(0, MAX_FOLDERS).join('\n')}${folders.length > MAX_FOLDERS ? `\n(+${folders.length - MAX_FOLDERS} pastas)` : ''}`,
-    notes && `NOTAS DO PROJETO (.detro/contexto.md), siga como instrução:\n${notes}`,
+    notes && `NOTAS DO PROJETO (${path.basename(dataDir(projectDir))}/contexto.md), siga como instrução:\n${notes}`,
   ].filter(Boolean).join('\n\n');
 }
 
@@ -103,7 +107,7 @@ const readBody = async (request) => {
 
 export function startServer({ projectDir, appScript, version, port = 0 }) {
   const token = randomBytes(16).toString('hex');
-  mkdirSync(path.join(projectDir, '.detro'), { recursive: true });
+  mkdirSync(dataDir(projectDir), { recursive: true });
   const clients = new Set();
   let history = [];
   let session = null;
@@ -155,7 +159,7 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
         return;
       }
       if (event.type === 'control_request' && event.request?.subtype !== 'can_use_tool') {
-        write(current, { type: 'control_response', response: { subtype: 'error', request_id: event.request_id, error: 'O detro não atende este pedido.' } });
+        write(current, { type: 'control_response', response: { subtype: 'error', request_id: event.request_id, error: 'O DjinnAI não atende este pedido.' } });
         return;
       }
       if (event.subtype === 'session_state_changed') busy = event.state !== 'idle';
@@ -220,7 +224,7 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
         projectDir,
         branch,
         version,
-        agentError: init ? '' : 'O Claude Code não respondeu. Confira se o comando claude está instalado e logado e rode detro de novo.',
+        agentError: init ? '' : 'O Claude Code não respondeu. Confira se o comando claude está instalado e logado e rode djinn de novo.',
         models: [...(claudeModels.length ? claudeModels : FALLBACK_MODELS), ...(await ollamaModels(settings.ollamaUrl))],
         appCommands: [...appNames],
         commands: [
@@ -242,7 +246,7 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
       const current = await ensureSession(await settingsOf(projectDir));
       if (!busy) {
         record?.end();
-        record = createWriteStream(path.join(projectDir, '.detro', 'last-turn.ndjson')).on('error', () => {});
+        record = createWriteStream(path.join(dataDir(projectDir), 'last-turn.ndjson')).on('error', () => {});
       }
       const content = images.length
         ? [...images.map(({ mediaType, data }) => ({ type: 'image', source: { type: 'base64', media_type: mediaType, data } })), { type: 'text', text }]
@@ -324,7 +328,7 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
       response.writeHead(200, { 'content-type': MIME[path.extname(file)] ?? 'application/octet-stream' });
       return createReadStream(file).pipe(response);
     }
-    if (request.headers['x-detro-token'] !== token) return response.writeHead(403).end();
+    if (request.headers['x-djinn-token'] !== token) return response.writeHead(403).end();
     try {
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await route(request)));
     } catch (error) {
@@ -333,7 +337,7 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
   });
 
   return new Promise((resolve, reject) => {
-    server.on('error', (error) => reject(new Error(error.code === 'EADDRINUSE' ? `A porta ${port} já está em uso. Feche o outro detro ou rode sem DETRO_PORT.` : error.message)));
+    server.on('error', (error) => reject(new Error(error.code === 'EADDRINUSE' ? `A porta ${port} já está em uso. Feche o outro djinn ou rode sem DJINN_PORT.` : error.message)));
     server.listen(port, '127.0.0.1', () => resolve({
       url: `http://127.0.0.1:${server.address().port}/?t=${token}`,
       close: () => {

@@ -1,4 +1,4 @@
-<h1 align="center">Detro CLI</h1>
+<h1 align="center">DjinnAI</h1>
 
 <p align="center">
   Uma tela local para conversar com o agente do <strong>Claude Code</strong> dentro do seu projeto.<br>
@@ -6,31 +6,31 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@vitortrack777/detro"><img src="https://img.shields.io/npm/v/@vitortrack777/detro.svg" alt="versão no npm"></a>
-  <img src="https://img.shields.io/node/v/@vitortrack777/detro.svg" alt="node">
-  <a href="LICENSE"><img src="https://img.shields.io/npm/l/@vitortrack777/detro.svg" alt="licença MIT"></a>
+  <a href="https://www.npmjs.com/package/@vitortrack777/djinnai"><img src="https://img.shields.io/npm/v/@vitortrack777/djinnai.svg" alt="versão no npm"></a>
+  <img src="https://img.shields.io/node/v/@vitortrack777/djinnai.svg" alt="node">
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/@vitortrack777/djinnai.svg" alt="licença MIT"></a>
 </p>
 
 ```bash
-npm install -g @vitortrack777/detro
+npm install -g @vitortrack777/djinnai
 cd meu-projeto
-detro              # abre o aplicativo (detro --navegador abre no navegador)
-detro restart api  # os comandos do ambiente continuam funcionando direto no terminal
+djinn              # abre o aplicativo (djinn --navegador abre no navegador)
+djinn restart api  # os comandos do ambiente continuam funcionando direto no terminal
 ```
 
 ---
 
 ## Como funciona
 
-`detro` sobe um servidor em `127.0.0.1`, numa porta livre, e abre a tela num **aplicativo de desktop**
+`djinn` sobe um servidor em `127.0.0.1`, numa porta livre, e abre a tela num **aplicativo de desktop**
 (Electron, que vem com o pacote), no Linux, no Windows e no macOS, sem depender de navegador.
-**Fechar a janela encerra o detro.** O endereço também aparece no terminal: dá para abrir no
+**Fechar a janela encerra o DjinnAI.** O endereço também aparece no terminal: dá para abrir no
 navegador ao mesmo tempo, e as duas telas mostram a mesma conversa.
 
 | Comando | Abre |
 |---|---|
-| `detro` | A janela do aplicativo. Se ela não abrir (sem ambiente gráfico, por exemplo), cai no navegador padrão |
-| `detro --navegador` | Só o navegador padrão, como numa aba comum |
+| `djinn` (ou `djinnai`) | A janela do aplicativo. Se ela não abrir (sem ambiente gráfico, por exemplo), cai no navegador padrão |
+| `djinn --navegador` | Só o navegador padrão, como numa aba comum |
 
 A conversa é
 uma sessão do Claude Code aberta na raiz do projeto, no mesmo protocolo que o Agent SDK usa
@@ -42,16 +42,16 @@ uma sessão do Claude Code aberta na raiz do projeto, no mesmo protocolo que o A
 - dá para **mandar mensagem com o agente trabalhando**: ela entra na fila e o agente lê assim que puder;
 - **prints colados** (Ctrl+V) ou arrastados para a tela vão junto com a mensagem;
 - o `/` lista as skills e comandos do Claude Code do projeto, além dos comandos do ambiente;
-- recarregar a página não perde a conversa, que continua até você digitar `/novo` ou fechar o detro.
+- recarregar a página não perde a conversa, que continua até você digitar `/novo` ou fechar o DjinnAI.
 
-Quem decide o que fazer é o agente. O detro não tem templates nem validadores próprios: ele só repassa
+Quem decide o que fazer é o agente. O DjinnAI não tem templates nem validadores próprios: ele só repassa
 o pedido, o modelo, o esforço e o modo de permissão, mais o contexto do projeto descrito abaixo.
 
 ## Requisitos
 
 | Requisito | Para quê |
 |---|---|
-| [Node.js](https://nodejs.org) 22.12+ (recomendado: 24 LTS) | Executar o detro e o Electron |
+| [Node.js](https://nodejs.org) 22.12+ (recomendado: 24 LTS) | Executar o DjinnAI e o Electron |
 | [Claude Code](https://docs.anthropic.com/claude-code) instalado e logado (`claude`) | O agente |
 | [Ollama](https://ollama.com) 0.14+ (opcional) | Usar modelos do Ollama como agente |
 | Script `appDev` ou `app` na raiz (opcional) | Os comandos do ambiente (`/start`, `/logs`…) |
@@ -60,7 +60,7 @@ o pedido, o modelo, o esforço e o modo de permissão, mais o contexto do projet
 
 | Parte | O que faz |
 |---|---|
-| Contexto e **Nova conversa**, no topo | Quantos tokens a conversa já carrega (o agente relê tudo a cada passo). Acima de 100k a tela sugere uma conversa nova; o botão (ou `/novo`) começa uma sessão limpa. Cada `detro` também começa numa sessão nova |
+| Contexto e **Nova conversa**, no topo | Quantos tokens a conversa já carrega (o agente relê tudo a cada passo). Acima de 100k a tela sugere uma conversa nova; o botão (ou `/novo`) começa uma sessão limpa. Cada `djinn` também começa numa sessão nova |
 | Caixa de pedido | Enter envia, Shift+Enter quebra a linha. Com o agente trabalhando, Enter põe a mensagem na fila e o botão vira **parar** |
 | `/` | Lista `/novo` (conversa nova), os comandos do ambiente (`/start`, `/restart api`, `/logs --tail=100 api`, `/status`…) e as skills do Claude Code. A saída do ambiente aparece na tela, e o botão de parar encerra o comando (útil no `logs -f`) |
 | Seletor de modelo | Os modelos que a sua conta do Claude Code oferece ou qualquer modelo instalado no Ollama. O modelo do Ollama roda **dentro do Claude Code**, com as mesmas ferramentas e os mesmos `CLAUDE.md` |
@@ -70,23 +70,23 @@ o pedido, o modelo, o esforço e o modo de permissão, mais o contexto do projet
 No cartão de permissão, **Permitir e não perguntar de novo** grava a regra sugerida pelo Claude Code, como no terminal.
 
 Os comandos destrutivos do ambiente (`execute`, que recria o banco, e `auto-remove`, que apaga
-volumes) não aparecem na tela. Use pelo terminal: `detro execute <banco> arquivo.sql`.
+volumes) não aparecem na tela. Use pelo terminal: `djinn execute <banco> arquivo.sql`.
 
 ## Contexto que o agente recebe
 
 O Claude Code já carrega os `CLAUDE.md`, as configurações do projeto (`.claude/`), as skills e o git
-status. O detro acrescenta ao system prompt (`--append-system-prompt`):
+status. O DjinnAI acrescenta ao system prompt (`--append-system-prompt`):
 
 - as pastas versionadas do projeto, até 4 níveis e no máximo 150, para o agente não gastar passos procurando;
-- o conteúdo de `.detro/contexto.md`, se existir, como instrução.
+- o conteúdo de `.djinn/contexto.md`, se existir, como instrução.
 
-Use o `.detro/contexto.md` para o que vale só para você e não pertence ao repositório: vocabulário do
+Use o `.djinn/contexto.md` para o que vale só para você e não pertence ao repositório: vocabulário do
 domínio, armadilhas conhecidas, onde fica cada coisa, o card em andamento. Ele é lido no começo de
 cada conversa: depois de editar, digite `/novo`.
 
 ## Configuração
 
-O modelo, o esforço e o modo escolhidos na tela ficam salvos em `.detro/config.json`:
+O modelo, o esforço e o modo escolhidos na tela ficam salvos em `.djinn/config.json`:
 
 ```json
 {
@@ -97,14 +97,16 @@ O modelo, o esforço e o modo escolhidos na tela ficam salvos em `.detro/config.
 }
 ```
 
-O retorno bruto da última mensagem ao agente fica em `.detro/last-turn.ndjson`, para diagnóstico.
+O retorno bruto da última mensagem ao agente fica em `.djinn/last-turn.ndjson`, para diagnóstico.
 
 | Variável de ambiente | Descrição |
 |---|---|
-| `DETRO_PORT` | Porta fixa no lugar de uma porta livre |
-| `DETRO_APP_SCRIPT` | Script de ambiente no lugar de `appDev`/`app` |
+| `DJINN_PORT` | Porta fixa no lugar de uma porta livre |
+| `DJINN_APP_SCRIPT` | Script de ambiente no lugar de `appDev`/`app` |
 
-O detro remove `ANTHROPIC_API_KEY` do ambiente do agente: o uso conta na sua assinatura do Claude Code,
+Projetos que já têm `.detro/` continuam usando essa pasta, e `DETRO_PORT`/`DETRO_APP_SCRIPT` seguem valendo quando a variável `DJINN_` correspondente não está definida.
+
+O DjinnAI remove `ANTHROPIC_API_KEY` do ambiente do agente: o uso conta na sua assinatura do Claude Code,
 não na API paga. Com modelo de nuvem do Ollama (`:cloud`), o código lido pelo agente sai da máquina.
 
 ## Segurança
@@ -118,15 +120,15 @@ não na API paga. Com modelo de nuvem do Ollama (`:cloud`), o código lido pelo 
 ## Instalação a partir do código
 
 ```bash
-git clone git@github.com:vitortrack/detro-cli.git
-cd detro-cli
-bash ./detro.sh install     # npm ci + build da tela + npm link + autocompletar do bash
+git clone git@github.com:vitortrack/djinnai.git
+cd djinnai
+bash ./djinn.sh install     # npm ci + build da tela + npm link + autocompletar do bash
 ```
 
 | Comando | O que faz |
 |---|---|
-| `bash ./detro.sh update` | O mesmo que `install`, depois de um `git pull` |
-| `bash ./detro.sh uninstall` | Remove o link global e o autocompletar |
+| `bash ./djinn.sh update` | O mesmo que `install`, depois de um `git pull` |
+| `bash ./djinn.sh uninstall` | Remove o link global e o autocompletar |
 | `npm run build` | Gera `web/dist`, que é o que o pacote publica |
 | `npm test` | Checa o Markdown (sem HTML nem links perigosos) e como a tela monta a conversa a partir dos eventos |
 

@@ -18,7 +18,7 @@ const MODES = [
 const EFFORTS = { Baixo: 'low', Médio: 'medium', Alto: 'high', 'Muito alto': 'xhigh', Máximo: 'max' };
 const EFFORT_LABELS = Object.keys(EFFORTS);
 const CONTEXT_WARNING = 100000;
-const LOST = 'A conexão com o detro caiu. Rode detro de novo no terminal e use o endereço novo que ele mostrar.';
+const LOST = 'A conexão com o DjinnAI caiu. Rode djinn de novo no terminal e use o endereço novo que ele mostrar.';
 
 const thousands = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
@@ -26,11 +26,11 @@ async function api(route, body) {
   try {
     const response = await fetch(`/api/${route}`, {
       method: body === undefined ? 'GET' : 'POST',
-      headers: { 'x-detro-token': TOKEN, 'content-type': 'application/json' },
+      headers: { 'x-djinn-token': TOKEN, 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error ?? `O detro respondeu ${response.status}. Rode detro de novo no terminal.`);
+    if (!response.ok) throw new Error(data.error ?? `O DjinnAI respondeu ${response.status}. Rode djinn de novo no terminal.`);
     return data;
   } catch (error) {
     throw new Error(error instanceof TypeError ? LOST : error.message);
@@ -55,7 +55,7 @@ class TurnBoundary extends Component {
     return (
       <section className="turn">
         <div className="turn__prompt">{this.props.prompt}</div>
-        <div className="turn__error">Não consegui mostrar esta resposta ({this.state.error.message}). O retorno bruto do agente está em .detro/last-turn.ndjson.</div>
+        <div className="turn__error">Não consegui mostrar esta resposta ({this.state.error.message}). O retorno bruto do agente está em .djinn/last-turn.ndjson (ou .detro/, em projetos antigos).</div>
       </section>
     );
   }
@@ -146,7 +146,7 @@ export default function App() {
         setMode(data.settings.mode);
         if (data.agentError) setNotice(data.agentError);
       })
-      .catch((error) => setLoadError(error.message === LOST ? 'Não foi possível falar com o detro. Abra o endereço que o terminal mostrou, com o ?t= no fim.' : error.message));
+      .catch((error) => setLoadError(error.message === LOST ? 'Não foi possível falar com o DjinnAI. Abra o endereço que o terminal mostrou, com o ?t= no fim.' : error.message));
   }, []);
 
   useEffect(() => {
@@ -219,7 +219,7 @@ export default function App() {
     <main className="app">
       <header className="app__header">
         <div>
-          <div className="app__title">detro</div>
+          <div className="app__title">DjinnAI</div>
           <div className="app__meta">{state.project}{state.branch ? ` · ${state.branch}` : ''} · v{state.version}</div>
         </div>
         <div className="app__controls">

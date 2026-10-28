@@ -2,19 +2,19 @@
 
 set -Eeuo pipefail
 
-readonly CLI_NAME="detro"
+readonly CLI_NAME="djinn"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly PACKAGE_FILE="${SCRIPT_DIR}/package.json"
 readonly PACKAGE_LOCK_FILE="${SCRIPT_DIR}/package-lock.json"
 readonly INDEX_FILE="${SCRIPT_DIR}/index.js"
-readonly COMPLETION_SOURCE="${SCRIPT_DIR}/detro-completion.bash"
+readonly COMPLETION_SOURCE="${SCRIPT_DIR}/djinn-completion.bash"
 
 readonly COMPLETION_DIR="${HOME}/.local/share/bash-completion/completions"
 readonly COMPLETION_FILE="${COMPLETION_DIR}/${CLI_NAME}"
 readonly BASHRC_FILE="${HOME}/.bashrc"
 
-readonly BASHRC_MARKER_START="# >>> DETRO CLI >>>"
-readonly BASHRC_MARKER_END="# <<< DETRO CLI <<<"
+readonly BASHRC_MARKER_START="# >>> DJINNAI >>>"
+readonly BASHRC_MARKER_END="# <<< DJINNAI <<<"
 
 info() {
     printf '\033[1;36m%s\033[0m\n' "$1"
@@ -67,7 +67,7 @@ validate_environment() {
 
 ensure_permissions() {
     chmod +x "${INDEX_FILE}"
-    chmod +x "${SCRIPT_DIR}/detro.sh"
+    chmod +x "${SCRIPT_DIR}/djinn.sh"
 }
 
 install_dependencies() {
@@ -164,7 +164,7 @@ verify_installation() {
 }
 
 uninstall_cli() {
-    info "Removendo DETRO CLI..."
+    info "Removendo DjinnAI..."
 
     cd "${SCRIPT_DIR}"
 
@@ -176,7 +176,7 @@ uninstall_cli() {
 
     remove_old_bashrc_configuration
 
-    success "DETRO CLI removida."
+    success "DjinnAI removida."
     warning "Abra um novo terminal para concluir a atualização do ambiente."
 }
 
@@ -184,11 +184,11 @@ show_help() {
     cat <<EOF
 Uso:
 
-  bash cli/detro.sh
-  bash cli/detro.sh install
-  bash cli/detro.sh update
-  bash cli/detro.sh uninstall
-  bash cli/detro.sh help
+  bash ./djinn.sh
+  bash ./djinn.sh install
+  bash ./djinn.sh update
+  bash ./djinn.sh uninstall
+  bash ./djinn.sh help
 
 Comandos:
 
@@ -211,7 +211,7 @@ install_all() {
     verify_installation
 
     echo
-    success "DETRO CLI instalada com sucesso."
+    success "DjinnAI instalada com sucesso."
     echo
     printf 'Use:\n'
     printf '  %s\n' "${CLI_NAME}"
@@ -238,7 +238,7 @@ main() {
             ;;
 
         *)
-            die "Comando desconhecido: ${action}. Use: bash cli/detro.sh help"
+            die "Comando desconhecido: ${action}. Use: bash ./djinn.sh help"
             ;;
     esac
 }

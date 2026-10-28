@@ -1,19 +1,20 @@
 {
-  "name": "@vitortrack777/detro",
+  "name": "@vitortrack777/djinnai",
   "version": "0.5.2",
-  "description": "detro: tela web local para conversar com o agente do Claude Code (Claude ou modelos do Ollama) e rodar os comandos do ambiente do projeto.",
+  "description": "DjinnAI: aplicativo local para conversar com o agente do Claude Code (Claude ou modelos do Ollama) e rodar os comandos do ambiente do projeto.",
   "type": "module",
   "bin": {
-    "detro": "./index.js"
+    "djinn": "./index.js",
+    "djinnai": "./index.js"
   },
   "scripts": {
     "start": "node index.js",
     "test": "node web/src/lib/markdown.test.js && node web/src/lib/turns.test.js",
     "build": "vite build --config web/vite.config.js",
     "prepublishOnly": "npm run build",
-    "setup": "bash ./detro.sh install",
-    "update": "bash ./detro.sh update",
-    "uninstall-cli": "bash ./detro.sh uninstall"
+    "setup": "bash ./djinn.sh install",
+    "update": "bash ./djinn.sh update",
+    "uninstall-cli": "bash ./djinn.sh uninstall"
   },
   "license": "MIT",
   "engines": {
@@ -24,12 +25,13 @@
     "server.js",
     "window.cjs",
     "web/dist/",
-    "detro.sh",
-    "detro-completion.bash",
+    "djinn.sh",
+    "djinn-completion.bash",
     "LICENSE"
   ],
   "keywords": [
-    "detro",
+    "djinnai",
+    "djinn",
     "cli",
     "ai",
     "claude",
@@ -40,11 +42,11 @@
   "author": "vitortrack",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vitortrack/detro-cli.git"
+    "url": "git+https://github.com/vitortrack/djinnai.git"
   },
-  "homepage": "https://github.com/vitortrack/detro-cli#readme",
+  "homepage": "https://github.com/vitortrack/djinnai#readme",
   "bugs": {
-    "url": "https://github.com/vitortrack/detro-cli/issues"
+    "url": "https://github.com/vitortrack/djinnai/issues"
   },
   "publishConfig": {
     "access": "public"
