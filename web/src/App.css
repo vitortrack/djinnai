@@ -46,6 +46,8 @@ body {
 .app__controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .app__context { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .app__context[data-warn] { color: var(--warn); }
+.app__plan { display: flex; gap: 10px; font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); background: none; border: 0; padding: 0; cursor: pointer; }
+.app__plan span[data-warn] { color: var(--warn); font-weight: 600; }
 .app__new { font: inherit; font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
 .app__new:disabled { opacity: 0.5; cursor: default; }
 
@@ -128,3 +130,20 @@ body {
 .ask__option span { color: var(--muted); font-size: 12px; }
 .ask__option[data-on] { border-color: var(--accent); background: rgb(179 157 255 / 0.12); }
 .ask__other { font: inherit; color: var(--ink); background: #111113; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+
+.usage { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+.usage::backdrop { background: rgb(0 0 0 / 0.55); }
+.usage h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 18px 0 10px; }
+.usage__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.usage__limit { margin-bottom: 14px; }
+.usage__row { display: flex; justify-content: space-between; gap: 12px; }
+.usage__bar { height: 8px; border-radius: 4px; background: var(--panel); overflow: hidden; margin: 6px 0 4px; }
+.usage__bar > div { height: 100%; background: var(--accent); }
+.usage__bar > div[data-warn] { background: var(--warn); }
+.usage__row b[data-warn] { color: var(--warn); }
+.usage__note { color: var(--muted); font-size: 12px; margin: 0; }
+.usage__table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-bottom: 12px; }
+.usage__table th, .usage__table td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: right; white-space: nowrap; }
+.usage__table th:first-child, .usage__table td:first-child { text-align: left; }
+.usage__table th { color: var(--muted); font-weight: 500; }
+.usage__tag { margin-left: 6px; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; }

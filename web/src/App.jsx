@@ -5,6 +5,8 @@ import RubberSegment from './components/RubberSegment.jsx';
 import StatusMark from './components/StatusMark.jsx';
 import ThoughtLine from './components/ThoughtLine.jsx';
 import PermissionCard from './PermissionCard.jsx';
+import UsageDialog, { PlanMeter } from './UsageDialog.jsx';
+import { isNearLimit, limitLabel, relevantLimits, resetsAt } from './lib/limits.js';
 import { toHtml } from './lib/markdown.js';
 import { applyEvent, oneLine, toolTarget } from './lib/turns.js';
 
@@ -18,6 +20,7 @@ const MODES = [
 const EFFORTS = { Baixo: 'low', Médio: 'medium', Alto: 'high', 'Muito alto': 'xhigh', Máximo: 'max' };
 const EFFORT_LABELS = Object.keys(EFFORTS);
 const CONTEXT_WARNING = 100000;
+const PLAN_REFRESH_MS = 5 * 60 * 1000;
 const LOST = 'A conexão com o DjinnAI caiu. Rode djinn de novo no terminal e use o endereço novo que ele mostrar.';
 
 const thousands = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -134,6 +137,9 @@ export default function App() {
   const [images, setImages] = useState([]);
   const [notice, setNotice] = useState('');
   const [connected, setConnected] = useState(true);
+  const [usage, setUsage] = useState(null);
+  const [plan, setPlan] = useState(null);
+  const [modelName, setModelName] = useState('');
   const endRef = useRef(null);
   const agentBusy = turns.some((turn) => turn.kind === 'agent' && turn.status === 'working');
   const appBusy = turns.some((turn) => turn.kind === 'app' && turn.status === 'working');
@@ -144,6 +150,7 @@ export default function App() {
       .then((data) => {
         setState(data);
         setMode(data.settings.mode);
+        setModelName(data.models.find((m) => m.key === data.settings.model)?.name ?? '');
         if (data.agentError) setNotice(data.agentError);
       })
       .catch((error) => setLoadError(error.message === LOST ? 'Não foi possível falar com o DjinnAI. Abra o endereço que o terminal mostrou, com o ?t= no fim.' : error.message));
@@ -192,14 +199,39 @@ export default function App() {
     endRef.current?.scrollIntoView({ block: 'end' });
   }, [turns]);
 
+  useEffect(() => {
+    if (!state) return undefined;
+    const timer = setInterval(() => api('usage').then(setPlan, () => {}), PLAN_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [state]);
+
+  useEffect(() => {
+    if (state && !agentBusy) api('usage').then(setPlan, () => {});
+  }, [state, agentBusy]);
+
   if (!state) return <main className="app app--empty">{loadError || 'Abrindo o agente…'}</main>;
 
   const run = (promise) => promise.then(() => setNotice(''), (error) => setNotice(error.message));
+
+  const openUsage = () => {
+    setUsage({});
+    return api('usage').then(
+      (data) => {
+        setPlan(data);
+        setUsage({ data });
+      },
+      (error) => setUsage({ error: error.message }),
+    );
+  };
+
+  const limits = relevantLimits(plan?.limits, modelName);
+  const nearLimits = limits.filter(isNearLimit);
 
   const send = async (text, { model, effort }) => {
     const [command, ...args] = text.split(/\s+/);
     const name = command.slice(1);
     if (command === '/novo') return run(api('new', {}));
+    if (command === '/usage') return openUsage();
     if (command.startsWith('/') && state.appCommands.includes(name)) return run(api('app', { args: [name, ...args] }));
     const settings = { model: model.key, effort: EFFORTS[effort], mode };
     const pending = images;
@@ -223,6 +255,7 @@ export default function App() {
           <div className="app__meta">{state.project}{state.branch ? ` · ${state.branch}` : ''} · v{state.version}</div>
         </div>
         <div className="app__controls">
+          <PlanMeter limits={limits} onOpen={openUsage} />
           {context ? <span className="app__context" data-warn={context > CONTEXT_WARNING ? '' : undefined} title="Tokens que o agente relê a cada passo desta conversa">contexto {thousands(context)}</span> : null}
           <button type="button" className="app__new" disabled={agentBusy} onClick={() => run(api('new', {}))}>Nova conversa</button>
           <RubberSegment items={MODES} value={mode} onChange={changeMode} size="sm" aria-label="Modo de permissão" />
@@ -247,6 +280,11 @@ export default function App() {
       <div className="app__composer">
         {!connected ? <div className="turn__error">{LOST}</div> : null}
         {notice ? <div className="turn__warning">{notice}</div> : null}
+        {nearLimits.map((limit) => (
+          <div key={`${limit.kind}-${limit.percent}`} className="turn__warning">
+            {limitLabel(limit)}: você já usou {limit.percent}% do limite do plano{limit.resets_at ? `, que renova ${resetsAt(limit.resets_at)}` : ''}. Guarde o restante para o essencial ou troque para um modelo do Ollama até lá.
+          </div>
+        ))}
         {context > CONTEXT_WARNING && !agentBusy ? (
           <div className="turn__warning">
             Esta conversa já carrega {thousands(context)} tokens de contexto, relidos a cada passo. Se o próximo pedido é outro assunto, comece uma <b>Nova conversa</b>.
@@ -272,11 +310,13 @@ export default function App() {
           defaultEffort={effortLabel}
           busy={agentBusy || appBusy}
           onSend={send}
+          onModelChange={(row) => setModelName(row.name)}
           onStop={() => run(api(appBusy ? 'stop' : 'interrupt', {}))}
           width={820}
           maxRows={10}
         />
       </div>
+      {usage ? <UsageDialog data={usage.data} error={usage.error} onClose={() => setUsage(null)} /> : null}
     </main>
   );
 }

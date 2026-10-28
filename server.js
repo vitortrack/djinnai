@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync, mkdirSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -12,6 +13,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const MAX_FOLDERS = 150;
 const INIT_TIMEOUT_MS = 20000;
+const USAGE_TIMEOUT_MS = 15000;
+const PLAN_CACHE_MS = 60000;
 
 const APP_COMMANDS = [
   ['start', 'Sobe o stack e builda só o que mudou'],
@@ -99,6 +102,46 @@ const killGroup = (child, signal = 'SIGTERM') => {
   } catch {}
 };
 
+function planUsage() {
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;
+  const child = spawn('claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'], { cwd: os.tmpdir(), env });
+  return new Promise((resolve) => {
+    const done = (value) => {
+      clearTimeout(timer);
+      child.kill();
+      resolve(value);
+    };
+    const timer = setTimeout(done, USAGE_TIMEOUT_MS, null);
+    child.on('error', () => done(null));
+    child.stdin.on('error', () => {});
+    eachLine(child.stdout, (line) => {
+      try {
+        const event = JSON.parse(line);
+        if (event.response?.request_id === 'usage') done(event.response.response ?? null);
+      } catch {}
+    });
+    for (const [id, subtype] of [['init', 'initialize'], ['usage', 'get_usage']]) {
+      child.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: id, request: { subtype } })}\n`);
+    }
+  });
+}
+
+function totalUsage(usageByProcess) {
+  const total = {};
+  for (const { agent, models } of usageByProcess.values()) {
+    for (const [model, usage] of Object.entries(models)) {
+      const sum = (total[model] ??= { model, agent, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, cost: 0 });
+      sum.input += usage.inputTokens ?? 0;
+      sum.cacheRead += usage.cacheReadInputTokens ?? 0;
+      sum.cacheWrite += usage.cacheCreationInputTokens ?? 0;
+      sum.output += usage.outputTokens ?? 0;
+      sum.cost += usage.costUSD ?? 0;
+    }
+  }
+  return Object.values(total);
+}
+
 const readBody = async (request) => {
   let body = '';
   for await (const chunk of request) body += chunk;
@@ -115,6 +158,19 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
   let busy = false;
   let app = null;
   let record = null;
+  const usageByProcess = new Map();
+  const plan = { at: 0, value: null, pending: null };
+
+  async function currentPlan() {
+    if (Date.now() - plan.at < PLAN_CACHE_MS) return plan.value;
+    plan.pending ??= planUsage().finally(() => {
+      plan.pending = null;
+    });
+    const fresh = await plan.pending;
+    if (!fresh?.rate_limits) return plan.value ?? fresh;
+    Object.assign(plan, { at: Date.now(), value: fresh });
+    return fresh;
+  }
 
   const broadcast = (event, keep = true) => {
     if (keep) history.push(event);
@@ -163,6 +219,7 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
         return;
       }
       if (event.subtype === 'session_state_changed') busy = event.state !== 'idle';
+      if (event.type === 'result' && event.modelUsage) usageByProcess.set(current, { agent, models: event.modelUsage });
       broadcast(event, event.type !== 'stream_event');
     });
     child.stderr.on('data', (chunk) => { errors = (errors + chunk).slice(-2000); });
@@ -217,7 +274,7 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
       const current = await ensureSession(settings);
       const init = await Promise.race([current.init, new Promise((resolve) => setTimeout(resolve, INIT_TIMEOUT_MS, null))]);
       const branch = await promisify(execFile)('git', ['branch', '--show-current'], { cwd: projectDir }).then(({ stdout }) => stdout.trim(), () => '');
-      const appNames = new Set(['novo', ...APP_COMMANDS.map(([name]) => name)]);
+      const appNames = new Set(['novo', 'usage', ...APP_COMMANDS.map(([name]) => name)]);
       const claudeModels = (init?.models ?? []).map((m) => ({ key: `claude:${m.value}`, name: m.value === 'default' ? 'Padrão' : m.displayName, tag: m.description?.split(' · ')[0] ?? 'Claude' }));
       return {
         project: path.basename(projectDir),
@@ -229,10 +286,19 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
         appCommands: [...appNames],
         commands: [
           { key: 'novo', name: '/novo', description: 'Começa uma conversa nova' },
+          { key: 'usage', name: '/usage', description: 'Limites do plano e uso por modelo' },
           ...APP_COMMANDS.map(([key, description]) => ({ key, name: `/${key}`, description })),
           ...(init?.commands ?? []).filter((c) => !appNames.has(c.name)).map((c) => ({ key: `claude-${c.name}`, name: `/${c.name}`, description: c.description.split(/(?<=\.)\s/)[0].slice(0, 110) })),
         ],
         settings: { model: settings.model, effort: settings.effort, mode: settings.mode },
+      };
+    },
+    'GET /api/usage': async () => {
+      const info = await currentPlan();
+      return {
+        subscription: info?.subscription_type ?? '',
+        limits: info?.rate_limits?.limits ?? null,
+        models: totalUsage(usageByProcess),
       };
     },
     'POST /api/settings': async (request) => {

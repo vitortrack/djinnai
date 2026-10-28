@@ -125,6 +125,7 @@ export default function PromptBar({
   efforts = DEFAULT_EFFORTS,
   defaultEffort = '',
   onEffortChange,
+  onModelChange,
   busy = false,
   onSend,
   onStop,
@@ -156,7 +157,7 @@ export default function PromptBar({
   const lastOpen = useRef(null);
   const dictation = useRef(0);
   const latest = useRef({});
-  latest.current = { onSend, onStop, onAttach, onDictate, onEffortChange };
+  latest.current = { onSend, onStop, onAttach, onDictate, onEffortChange, onModelChange };
 
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState([]);
@@ -376,6 +377,7 @@ export default function PromptBar({
   const pick = row => {
     if (open === 'model') {
       setModelKey(row.key);
+      latest.current.onModelChange?.(row);
       setModelOpen(false);
       focusInput();
       return;
@@ -437,7 +439,8 @@ export default function PromptBar({
       }
       if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
         e.preventDefault();
-        pick(list[cursor]);
+        if (e.key === 'Enter' && open === 'slash' && list[cursor].name === `/${query}`) send();
+        else pick(list[cursor]);
         return;
       }
     }

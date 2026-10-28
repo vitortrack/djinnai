@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node web/src/lib/markdown.test.js && node web/src/lib/turns.test.js",
+    "test": "node web/src/lib/markdown.test.js && node web/src/lib/turns.test.js && node web/src/lib/limits.test.js",
     "build": "vite build --config web/vite.config.js",
     "prepublishOnly": "npm run build",
     "setup": "bash ./djinn.sh install",
