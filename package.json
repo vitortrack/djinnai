@@ -1,6 +1,6 @@
 {
   "name": "@vitortrack777/detro",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "detro: tela web local para conversar com o agente do Claude Code (Claude ou modelos do Ollama) e rodar os comandos do ambiente do projeto.",
   "type": "module",
   "bin": {
