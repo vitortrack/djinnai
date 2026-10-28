@@ -14,7 +14,7 @@
 ```bash
 npm install -g @vitortrack777/detro
 cd meu-projeto
-detro              # abre a tela no navegador
+detro              # abre a tela numa janela própria
 detro restart api  # os comandos do ambiente continuam funcionando direto no terminal
 ```
 
@@ -22,7 +22,10 @@ detro restart api  # os comandos do ambiente continuam funcionando direto no ter
 
 ## Como funciona
 
-`detro` sobe um servidor em `127.0.0.1`, numa porta livre, e abre a tela no navegador. A conversa é
+`detro` sobe um servidor em `127.0.0.1`, numa porta livre, e abre a tela numa **janela própria**, no
+modo aplicativo do Chrome, Edge ou Chromium (`--app`), sem abas nem barra de endereço, no Linux, no
+Windows e no macOS. A janela usa um perfil temporário, sem as extensões do seu navegador, e **fechar a
+janela encerra o detro**. Sem nenhum desses navegadores instalado, a tela abre no navegador padrão. A conversa é
 uma sessão do Claude Code aberta na raiz do projeto, no mesmo protocolo que o Agent SDK usa
 (`stream-json` de entrada e saída). Por isso a tela tem o que o Claude Code tem:
 
