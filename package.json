@@ -11,7 +11,6 @@
     "test": "node web/src/lib/markdown.test.js && node web/src/lib/turns.test.js",
     "build": "vite build --config web/vite.config.js",
     "prepublishOnly": "npm run build",
-    "postinstall": "node -e \"try { require('electron') } catch {}\"",
     "setup": "bash ./detro.sh install",
     "update": "bash ./detro.sh update",
     "uninstall-cli": "bash ./detro.sh uninstall"
