@@ -188,7 +188,9 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => endRef.current?.scrollIntoView({ block: 'end' }), [turns]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [turns]);
 
   if (!state) return <main className="app app--empty">{loadError || 'Abrindo o agente…'}</main>;
 
