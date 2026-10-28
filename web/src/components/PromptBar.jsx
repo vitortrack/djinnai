@@ -207,6 +207,7 @@ export default function PromptBar({
     const fresh = lastOpen.current !== open;
     lastOpen.current = open;
     if (fresh) glow.style.transition = 'none';
+    row.scrollIntoView({ block: 'nearest' });
     glow.style.top = `${row.offsetTop}px`;
     glow.style.height = `${row.offsetHeight}px`;
     glow.style.opacity = '1';
@@ -397,7 +398,7 @@ export default function PromptBar({
   };
 
   const send = () => {
-    if (!canSend || busy) return;
+    if (!canSend) return;
     latest.current.onSend?.(draft.trim(), { attachments, model, effort: level });
     setDraft('');
     setAttachments([]);

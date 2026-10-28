@@ -4,102 +4,43 @@ import PromptBar from './components/PromptBar.jsx';
 import RubberSegment from './components/RubberSegment.jsx';
 import StatusMark from './components/StatusMark.jsx';
 import ThoughtLine from './components/ThoughtLine.jsx';
+import PermissionCard from './PermissionCard.jsx';
 import { toHtml } from './lib/markdown.js';
+import { applyEvent, oneLine, toolTarget } from './lib/turns.js';
 
 const TOKEN = new URLSearchParams(location.search).get('t');
 const MODES = [
   { value: 'plan', label: 'Planejar' },
-  { value: 'manual', label: 'Só leitura' },
+  { value: 'manual', label: 'Perguntar' },
   { value: 'acceptEdits', label: 'Editar' },
   { value: 'auto', label: 'Automático' },
 ];
 const EFFORTS = { Baixo: 'low', Médio: 'medium', Alto: 'high', 'Muito alto': 'xhigh', Máximo: 'max' };
 const EFFORT_LABELS = Object.keys(EFFORTS);
-
-const thousands = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
-const oneLine = (text, max = 160) => String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
-
-function api(route, body) {
-  return fetch(`/api/${route}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { 'x-detro-token': TOKEN, 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-}
-
 const LOST = 'A conexão com o detro caiu. Rode detro de novo no terminal e use o endereço novo que ele mostrar.';
 
-async function readStream(request, onEvent) {
-  let exited = false;
+const thousands = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+async function api(route, body) {
   try {
-    const response = await request;
-    if (!response.ok) {
-      const { error } = await response.json().catch(() => ({}));
-      onEvent({ type: 'exit', code: 1, error: error ?? `O detro respondeu ${response.status}. Rode detro de novo no terminal.` });
-      return;
-    }
-    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-    let pending = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      const lines = (pending + value).split('\n');
-      pending = lines.pop();
-      for (const line of lines.filter(Boolean)) {
-        const event = JSON.parse(line);
-        exited ||= event.type === 'exit';
-        onEvent(event);
-      }
-    }
-  } catch {}
-  if (!exited) onEvent({ type: 'exit', code: 1, error: LOST });
-}
-
-function toolTarget(input, root) {
-  input ??= {};
-  const target = input.file_path ?? input.path ?? input.pattern ?? input.command ?? input.skill ?? input.url ?? input.query ?? input.description ?? '';
-  return oneLine(String(target).replace(`${root}/`, ''), 120);
-}
-
-function reduce(turn, event, root) {
-  const parts = Array.isArray(event.message?.content) ? event.message.content : [];
-  const next = { ...turn, thinking: [...turn.thinking], items: [...turn.items] };
-  if (event.type === 'assistant') {
-    for (const part of parts) {
-      if (part.type === 'thinking' && part.thinking) next.thinking.push(oneLine(part.thinking));
-      if (part.type === 'text' && part.text.trim()) next.items.push({ kind: 'text', text: part.text.trim() });
-      if (part.type === 'tool_use') next.items.push({ kind: 'tool', id: part.id, name: part.name, target: toolTarget(part.input, root), status: 'running' });
-    }
-  } else if (event.type === 'user') {
-    for (const part of parts.filter((p) => p.type === 'tool_result')) {
-      const text = Array.isArray(part.content) ? part.content.map((c) => c.text ?? '').join('\n') : String(part.content ?? '');
-      next.items = next.items.map((item) => (item.id === part.tool_use_id
-        ? { ...item, status: part.is_error ? 'failed' : 'done', detail: part.is_error ? oneLine(text, 200) : `${text.split('\n').length} linhas` }
-        : item));
-    }
-  } else if (event.type === 'out') {
-    next.log = (next.log ?? '') + event.text;
-  } else if (event.type === 'result') {
-    next.result = event;
-  } else if (event.type === 'exit') {
-    next.status = event.code && !event.stopped ? 'error' : 'done';
-    next.stopped = event.stopped;
-    next.error = event.error ?? next.error ?? (next.result?.is_error ? oneLine(next.result.result, 600) : undefined);
-    next.items = next.items.map((item) => (item.status === 'running' ? { ...item, status: 'cancelled' } : item));
+    const response = await fetch(`/api/${route}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { 'x-detro-token': TOKEN, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error ?? `O detro respondeu ${response.status}. Rode detro de novo no terminal.`);
+    return data;
+  } catch (error) {
+    throw new Error(error instanceof TypeError ? LOST : error.message);
   }
-  return next;
 }
 
-function Usage({ result }) {
-  const usage = result?.usage;
-  if (!usage) return null;
-  const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
-  return (
-    <div className="turn__usage">
-      {thousands(input + (usage.output_tokens ?? 0))} tokens · entrada {thousands(input)} ({thousands(usage.cache_read_input_tokens ?? 0)} do cache) · saída {thousands(usage.output_tokens ?? 0)}
-    </div>
-  );
-}
+const readImage = (file) => new Promise((resolve) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve({ mediaType: file.type, data: String(reader.result).split(',')[1] });
+  reader.readAsDataURL(file);
+});
 
 class TurnBoundary extends Component {
   state = { error: null };
@@ -113,43 +54,60 @@ class TurnBoundary extends Component {
     return (
       <section className="turn">
         <div className="turn__prompt">{this.props.prompt}</div>
-        <div className="turn__error">Não consegui mostrar esta resposta ({this.state.error.message}). O último retorno do agente está em .detro/last-turn.ndjson.</div>
+        <div className="turn__error">Não consegui mostrar esta resposta ({this.state.error.message}). O retorno bruto do agente está em .detro/last-turn.ndjson.</div>
       </section>
     );
   }
 }
 
-function safeReduce(turn, event, root) {
-  try {
-    return reduce(turn, event, root);
-  } catch (error) {
-    return { ...turn, error: `Não consegui mostrar um evento do agente (${error.message}). O último retorno do agente está em .detro/last-turn.ndjson.` };
-  }
+function Usage({ usage }) {
+  if (!usage) return null;
+  const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+  return (
+    <div className="turn__usage">
+      {thousands(input + (usage.output_tokens ?? 0))} tokens · entrada {thousands(input)} ({thousands(usage.cache_read_input_tokens ?? 0)} do cache) · saída {thousands(usage.output_tokens ?? 0)}
+    </div>
+  );
 }
 
-function Turn({ turn }) {
-  const denials = turn.result?.permission_denials ?? [];
+function Turn({ turn, root, onAnswer, onApprovePlan }) {
+  const denials = turn.denials ?? [];
+  const steps = [...turn.thinking, ...(turn.liveThinking ? [oneLine(turn.liveThinking)] : [])];
   return (
     <section className="turn">
-      <div className="turn__prompt">{turn.prompt}</div>
-      {turn.thinking.length > 0 ? (
-        <ThoughtLine label="Pensando…" doneLabel="Pensou por" steps={turn.thinking} working={turn.status === 'working'} fontSize={14} />
+      <div className="turn__prompt">
+        {turn.images?.length ? <div className="turn__images">{turn.images.map((src, i) => <img key={i} src={src} alt="" />)}</div> : null}
+        {turn.prompt}
+      </div>
+      {turn.thought ? (
+        <ThoughtLine label="Pensando…" doneLabel="Pensou por" steps={steps} working={turn.status === 'working' && !turn.live && turn.items.length === 0} fontSize={14} />
       ) : null}
-      {turn.items.map((item, i) => (item.kind === 'text' ? (
-        <div key={i} className="turn__text" dangerouslySetInnerHTML={{ __html: toHtml(item.text) }} />
-      ) : (
-        <div key={i} className="turn__tool">
-          <StatusMark status={item.status} size={16} />
-          <div>
-            <div><b>{item.name}</b> <span className="turn__target">{item.target}</span></div>
-            {item.detail ? <div className={`turn__detail${item.status === 'failed' ? ' turn__detail--error' : ''}`}>{item.detail}</div> : null}
+      {turn.items.map((item, i) => {
+        if (item.kind === 'text') return <div key={i} className="turn__text" dangerouslySetInnerHTML={{ __html: toHtml(item.text) }} />;
+        if (item.kind === 'prompt') {
+          return (
+            <div key={i} className="turn__prompt">
+              {item.images.length ? <div className="turn__images">{item.images.map((src, j) => <img key={j} src={src} alt="" />)}</div> : null}
+              {item.text}
+            </div>
+          );
+        }
+        if (item.kind === 'ask') return <PermissionCard key={i} item={item} root={root} onAnswer={onAnswer} onApprovePlan={onApprovePlan} />;
+        return (
+          <div key={i} className="turn__tool">
+            <StatusMark status={item.status} size={16} />
+            <div>
+              <div><b>{item.name}</b> <span className="turn__target">{item.target}</span></div>
+              {item.detail ? <div className={`turn__detail${item.status === 'failed' ? ' turn__detail--error' : ''}`}>{item.detail}</div> : null}
+            </div>
           </div>
-        </div>
-      )))}
+        );
+      })}
+      {turn.live ? <div className="turn__text" dangerouslySetInnerHTML={{ __html: toHtml(turn.live) }} /> : null}
       {turn.log ? <pre className="turn__log">{turn.log}</pre> : null}
       {denials.length > 0 ? (
         <div className="turn__warning">
-          O modo atual bloqueou: {denials.map((d) => `${d.tool_name}(${toolTarget(d.tool_input)})`).join(', ')}. Troque para Editar ou Automático e peça de novo.
+          O modo atual bloqueou: {denials.map((d) => `${d.tool_name}(${toolTarget(d.tool_input, root)})`).join(', ')}. Troque o modo e peça de novo.
         </div>
       ) : null}
       {turn.error ? <div className="turn__error">{turn.error}</div> : null}
@@ -161,7 +119,7 @@ function Turn({ turn }) {
           status={turn.status}
           fontSize={13}
         />
-        <Usage result={turn.result} />
+        <Usage usage={turn.usage} />
       </div>
     </section>
   );
@@ -172,49 +130,85 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [mode, setMode] = useState('acceptEdits');
   const [turns, setTurns] = useState([]);
+  const [images, setImages] = useState([]);
+  const [notice, setNotice] = useState('');
+  const [connected, setConnected] = useState(true);
   const endRef = useRef(null);
-  const busy = turns.at(-1)?.status === 'working';
+  const agentBusy = turns.some((turn) => turn.kind === 'agent' && turn.status === 'working');
+  const appBusy = turns.some((turn) => turn.kind === 'app' && turn.status === 'working');
 
   useEffect(() => {
     api('state')
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error())))
       .then((data) => {
         setState(data);
         setMode(data.settings.mode);
+        if (data.agentError) setNotice(data.agentError);
       })
-      .catch(() => setLoadError('Não foi possível falar com o detro. Abra o endereço que o terminal mostrou, com o ?t= no fim.'));
+      .catch((error) => setLoadError(error.message === LOST ? 'Não foi possível falar com o detro. Abra o endereço que o terminal mostrou, com o ?t= no fim.' : error.message));
+  }, []);
+
+  useEffect(() => {
+    if (!state) return undefined;
+    const events = new EventSource(`/api/events?t=${TOKEN}`);
+    events.onopen = () => setConnected(true);
+    events.onerror = () => setConnected(false);
+    events.onmessage = (message) => {
+      const event = JSON.parse(message.data);
+      setTurns((current) => {
+        try {
+          return applyEvent(current, event, state.projectDir);
+        } catch (error) {
+          return [...current.slice(0, -1), { ...current.at(-1), error: `Não consegui mostrar um evento do agente (${error.message}).` }];
+        }
+      });
+    };
+    return () => events.close();
+  }, [state]);
+
+  useEffect(() => {
+    const add = (files) => {
+      const picked = [...files].filter((file) => file.type.startsWith('image/'));
+      if (picked.length) setImages((list) => [...list, ...picked.map((file) => ({ file, url: URL.createObjectURL(file) }))]);
+    };
+    const onPaste = (e) => add(e.clipboardData?.files ?? []);
+    const onDrop = (e) => {
+      e.preventDefault();
+      add(e.dataTransfer?.files ?? []);
+    };
+    const onDragOver = (e) => e.preventDefault();
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('drop', onDrop);
+    window.addEventListener('dragover', onDragOver);
+    return () => {
+      window.removeEventListener('paste', onPaste);
+      window.removeEventListener('drop', onDrop);
+      window.removeEventListener('dragover', onDragOver);
+    };
   }, []);
 
   useEffect(() => endRef.current?.scrollIntoView({ block: 'end' }), [turns]);
 
-  if (!state) return <main className="app app--empty">{loadError || 'Carregando…'}</main>;
+  if (!state) return <main className="app app--empty">{loadError || 'Abrindo o agente…'}</main>;
 
-  const update = (fn) => setTurns((list) => (list.length ? [...list.slice(0, -1), fn(list.at(-1))] : list));
-  const start = (prompt) => setTurns((list) => [...list, { prompt, thinking: [], items: [], status: 'working' }]);
+  const run = (promise) => promise.then(() => setNotice(''), (error) => setNotice(error.message));
 
   const send = async (text, { model, effort }) => {
-    const settings = { model: model.key, effort: EFFORTS[effort], mode };
-    api('settings', settings);
     const [command, ...args] = text.split(/\s+/);
-    if (command === '/novo') {
-      await api('new', {});
-      setTurns([]);
-      return;
-    }
-    start(text);
-    const onEvent = (event) => update((turn) => safeReduce(turn, event, state.projectDir));
-    if (state.commands.some((c) => c.name === command)) {
-      await readStream(api('app', { args: [command.slice(1), ...args] }), onEvent);
-    } else {
-      await readStream(api('agent', { prompt: text, ...settings }), onEvent);
-    }
+    const name = command.slice(1);
+    if (command === '/novo') return run(api('new', {}));
+    if (command.startsWith('/') && state.appCommands.includes(name)) return run(api('app', { args: [name, ...args] }));
+    const settings = { model: model.key, effort: EFFORTS[effort], mode };
+    const pending = images;
+    setImages([]);
+    return run(api('settings', settings).then(async () => api('send', { text, images: await Promise.all(pending.map(({ file }) => readImage(file))) })));
   };
 
   const changeMode = (value) => {
     setMode(value);
-    api('settings', { mode: value });
+    run(api('settings', { mode: value }));
   };
 
+  const answer = (requestId, decision) => run(api('permission', { requestId, ...decision }));
   const effortLabel = Object.entries(EFFORTS).find(([, value]) => value === state.settings.effort)?.[0] ?? 'Alto';
 
   return (
@@ -230,26 +224,42 @@ export default function App() {
       <div className="app__turns">
         {turns.length === 0 ? (
           <div className="app__hint">
-            Escreva um pedido para o agente ou use <b>/</b> para os comandos do ambiente (start, restart, logs…).
-            O modelo escolhido abaixo define quem atende: Claude ou um modelo do Ollama rodando dentro do Claude Code.
+            Converse com o agente como no Claude Code: ele pede permissão aqui, faz perguntas e mostra o plano para você aprovar.
+            Cole prints com Ctrl+V. Use <b>/</b> para skills e comandos do ambiente (start, restart, logs…).
           </div>
         ) : null}
-        {turns.map((turn, i) => <TurnBoundary key={i} prompt={turn.prompt}><Turn turn={turn} /></TurnBoundary>)}
+        {turns.map((turn, i) => (
+          <TurnBoundary key={i} prompt={turn.prompt}>
+            <Turn turn={turn} root={state.projectDir} onAnswer={answer} onApprovePlan={() => changeMode('acceptEdits')} />
+          </TurnBoundary>
+        ))}
         <div ref={endRef} />
       </div>
 
       <div className="app__composer">
+        {!connected ? <div className="turn__error">{LOST}</div> : null}
+        {notice ? <div className="turn__warning">{notice}</div> : null}
+        {images.length ? (
+          <div className="app__attachments">
+            {images.map(({ url }, i) => (
+              <button key={url} type="button" className="app__attachment" title="Remover" onClick={() => setImages((list) => list.filter((_, j) => j !== i))}>
+                <img src={url} alt="" />
+                <span>×</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <PromptBar
-          placeholder="Peça algo ao agente ou digite / para comandos"
+          placeholder={agentBusy ? 'Mande mais instruções; o agente lê assim que puder' : 'Peça algo ao agente ou digite / para comandos'}
           sources={[]}
           commands={state.commands}
           models={state.models}
           defaultModel={state.settings.model}
           efforts={EFFORT_LABELS}
           defaultEffort={effortLabel}
-          busy={busy}
+          busy={agentBusy || appBusy}
           onSend={send}
-          onStop={() => api('stop', {})}
+          onStop={() => run(api(appBusy ? 'stop' : 'interrupt', {}))}
           width={820}
           maxRows={10}
         />

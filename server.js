@@ -11,6 +11,7 @@ const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), 'web', 'dis
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const MAX_FOLDERS = 150;
+const INIT_TIMEOUT_MS = 20000;
 
 const APP_COMMANDS = [
   ['start', 'Sobe o stack e builda só o que mudou'],
@@ -24,13 +25,7 @@ const APP_COMMANDS = [
   ['worker', 'Builda o front atualizando a pasta dist'],
 ];
 
-const CLAUDE_MODELS = [
-  { key: 'claude:', name: 'Claude', tag: 'padrão' },
-  { key: 'claude:fable', name: 'Fable', tag: 'Claude' },
-  { key: 'claude:opus', name: 'Opus', tag: 'Claude' },
-  { key: 'claude:sonnet', name: 'Sonnet', tag: 'Claude' },
-  { key: 'claude:haiku', name: 'Haiku', tag: 'Claude' },
-];
+const FALLBACK_MODELS = [{ key: 'claude:default', name: 'Padrão', tag: 'Claude' }];
 
 const configPath = (projectDir) => path.join(projectDir, '.detro', 'config.json');
 
@@ -51,13 +46,23 @@ async function saveSettings(projectDir, settings) {
 
 const ollamaUrlOf = (config) => (config.ollamaUrl ?? config.ai?.ollama?.baseUrl ?? OLLAMA_URL).replace(/\/$/, '');
 
-async function listModels(config) {
+async function settingsOf(projectDir) {
+  const config = await loadConfig(projectDir);
+  return {
+    model: !config.model || config.model === 'claude:' ? 'claude:default' : config.model,
+    effort: config.effort ?? '',
+    mode: config.mode ?? 'acceptEdits',
+    ollamaUrl: ollamaUrlOf(config),
+  };
+}
+
+async function ollamaModels(url) {
   try {
-    const response = await fetch(`${ollamaUrlOf(config)}/api/tags`, { signal: AbortSignal.timeout(2000) });
+    const response = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(2000) });
     const { models = [] } = await response.json();
-    return [...CLAUDE_MODELS, ...models.map(({ name }) => ({ key: `ollama:${name}`, name, tag: 'Ollama' }))];
+    return models.map(({ name }) => ({ key: `ollama:${name}`, name, tag: 'Ollama' }));
   } catch {
-    return CLAUDE_MODELS;
+    return [];
   }
 }
 
@@ -74,23 +79,21 @@ async function sessionContext(projectDir) {
   ].filter(Boolean).join('\n\n');
 }
 
-async function agentProcess({ projectDir, config, prompt, model, effort, mode, sessionId }) {
-  const [agent, name] = model.split(/:(.*)/s);
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', mode];
-  const context = await sessionContext(projectDir);
-  if (context) args.push('--append-system-prompt', context);
-  if (name) args.push('--model', name);
-  if (effort) args.push('--effort', effort);
-  if (sessionId) args.push('--resume', sessionId);
-
-  const env = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;
-  if (agent === 'ollama') Object.assign(env, { ANTHROPIC_BASE_URL: ollamaUrlOf(config), ANTHROPIC_AUTH_TOKEN: 'ollama', ANTHROPIC_API_KEY: '' });
-
-  const child = spawn('claude', args, { cwd: projectDir, env, detached: true });
-  child.stdin.end(prompt);
-  return child;
+function eachLine(stream, onLine) {
+  let pending = '';
+  stream.on('data', (chunk) => {
+    const lines = (pending + chunk).split('\n');
+    pending = lines.pop();
+    for (const line of lines) if (line.trim()) onLine(line);
+  });
+  stream.on('end', () => pending.trim() && onLine(pending));
 }
+
+const killGroup = (child, signal = 'SIGTERM') => {
+  try {
+    process.kill(-child.pid, signal);
+  } catch {}
+};
 
 const readBody = async (request) => {
   let body = '';
@@ -101,103 +104,219 @@ const readBody = async (request) => {
 export function startServer({ projectDir, appScript, version, port = 0 }) {
   const token = randomBytes(16).toString('hex');
   mkdirSync(path.join(projectDir, '.detro'), { recursive: true });
-  let running = null;
+  const clients = new Set();
+  let history = [];
+  let session = null;
   let sessionId = null;
-  let stopped = false;
-  const stopRunning = (signal) => {
-    if (!running?.pid) return;
-    stopped = true;
-    try {
-      process.kill(-running.pid, signal);
-    } catch {}
+  let busy = false;
+  let app = null;
+  let record = null;
+
+  const broadcast = (event, keep = true) => {
+    if (keep) history.push(event);
+    for (const client of clients) client.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
-  function stream(response, child, onLine, isAgent) {
-    running = child;
-    stopped = false;
-    response.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
-    const send = (event) => response.write(`${JSON.stringify(event)}\n`);
-    let pending = '';
+  const write = (target, message) => target.child.stdin.write(`${JSON.stringify(message)}\n`);
+  const control = (target, request) => write(target, { type: 'control_request', request_id: randomBytes(6).toString('hex'), request });
+
+  async function openSession(settings) {
+    const [agent, name] = settings.model.split(/:(.*)/s);
+    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompt-tool', 'stdio', '--permission-mode', settings.mode];
+    const context = await sessionContext(projectDir);
+    if (context) args.push('--append-system-prompt', context);
+    if (name !== 'default') args.push('--model', name);
+    if (settings.effort) args.push('--effort', settings.effort);
+    if (sessionId) args.push('--resume', sessionId);
+
+    const env = { ...process.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' };
+    delete env.ANTHROPIC_API_KEY;
+    if (agent === 'ollama') Object.assign(env, { ANTHROPIC_BASE_URL: settings.ollamaUrl, ANTHROPIC_AUTH_TOKEN: 'ollama', ANTHROPIC_API_KEY: '' });
+
+    const child = spawn('claude', args, { cwd: projectDir, env, detached: true });
+    const current = { child, agent, effort: settings.effort, model: settings.model, mode: settings.mode, closing: false };
+    let resolveInit;
+    current.init = new Promise((resolve) => { resolveInit = resolve; });
+    const initId = randomBytes(6).toString('hex');
     let errors = '';
     let spawnError = '';
-    const record = isAgent ? createWriteStream(path.join(projectDir, '.detro', 'last-turn.ndjson')).on('error', () => {}) : null;
-    child.stdout.on('data', (chunk) => {
-      pending += chunk;
-      const lines = pending.split('\n');
-      pending = lines.pop();
-      for (const line of lines.filter((l) => l.trim())) {
-        record?.write(`${line}\n`);
-        onLine(line, send);
+
+    eachLine(child.stdout, (line) => {
+      record?.write(`${line}\n`);
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        return;
       }
+      if (event.session_id) sessionId = event.session_id;
+      if (event.type === 'control_response') {
+        if (event.response?.request_id === initId) resolveInit(event.response.response ?? null);
+        return;
+      }
+      if (event.type === 'control_request' && event.request?.subtype !== 'can_use_tool') {
+        write(current, { type: 'control_response', response: { subtype: 'error', request_id: event.request_id, error: 'O detro não atende este pedido.' } });
+        return;
+      }
+      if (event.subtype === 'session_state_changed') busy = event.state !== 'idle';
+      broadcast(event, event.type !== 'stream_event');
     });
-    child.stderr.on('data', (chunk) => {
-      errors += chunk;
-      if (!isAgent) send({ type: 'out', text: String(chunk) });
-    });
+    child.stderr.on('data', (chunk) => { errors = (errors + chunk).slice(-2000); });
+    child.stdin.on('error', () => {});
     child.on('error', (error) => {
-      spawnError = `Não foi possível executar ${child.spawnfile} (${error.message}). Confira se ele está instalado e no PATH.`;
+      spawnError = `Não foi possível executar o claude (${error.message}). Confira se o Claude Code está instalado e logado.`;
     });
-    child.on('close', (code, signal) => {
-      running = null;
-      record?.end();
-      if (pending.trim()) onLine(pending, send);
-      const error = spawnError || (code && !stopped && isAgent ? errors.trim().slice(-600) : undefined);
-      send({ type: 'exit', code: code ?? 1, stopped: stopped || Boolean(signal), error });
-      response.end();
+    child.on('close', (code) => {
+      resolveInit(null);
+      if (session === current) session = null;
+      if (current.closing) return;
+      busy = false;
+      broadcast({ type: 'session_end', error: spawnError || errors.trim().slice(-600) || `O agente encerrou sozinho (código ${code}). Mande a mensagem de novo para retomar a conversa.` });
     });
+
+    write(current, { type: 'control_request', request_id: initId, request: { subtype: 'initialize' } });
+    return current;
   }
 
-  const agentLine = (line, send) => {
-    try {
-      const event = JSON.parse(line);
-      if (event.type === 'result' && event.session_id) sessionId = event.session_id;
-      send(event);
-    } catch {
-      send({ type: 'out', text: `${line}\n` });
+  let opening = null;
+
+  async function ensureSession(settings) {
+    while (opening) await opening;
+    const [agent] = settings.model.split(':');
+    if (session && session.agent === agent && session.effort === settings.effort) {
+      if (session.mode !== settings.mode) control(session, { subtype: 'set_permission_mode', mode: settings.mode });
+      if (session.model !== settings.model) {
+        const name = settings.model.split(/:(.*)/s)[1];
+        control(session, { subtype: 'set_model', ...(name !== 'default' && { model: name }) });
+      }
+      Object.assign(session, { mode: settings.mode, model: settings.model });
+      return session;
     }
-  };
-  const appLine = (line, send) => send({ type: 'out', text: `${line}\n` });
+    if (session && busy) return session;
+    closeSession();
+    opening = openSession(settings);
+    session = await opening;
+    opening = null;
+    return session;
+  }
+
+  function closeSession() {
+    if (!session) return;
+    session.closing = true;
+    killGroup(session.child);
+    session = null;
+  }
 
   const routes = {
     'GET /api/state': async () => {
-      const config = await loadConfig(projectDir);
+      const settings = await settingsOf(projectDir);
+      const current = await ensureSession(settings);
+      const init = await Promise.race([current.init, new Promise((resolve) => setTimeout(resolve, INIT_TIMEOUT_MS, null))]);
       const branch = await promisify(execFile)('git', ['branch', '--show-current'], { cwd: projectDir }).then(({ stdout }) => stdout.trim(), () => '');
+      const appNames = new Set(['novo', ...APP_COMMANDS.map(([name]) => name)]);
+      const claudeModels = (init?.models ?? []).map((m) => ({ key: `claude:${m.value}`, name: m.value === 'default' ? 'Padrão' : m.displayName, tag: m.description?.split(' · ')[0] ?? 'Claude' }));
       return {
         project: path.basename(projectDir),
         projectDir,
         branch,
         version,
-        models: await listModels(config),
-        commands: [{ key: 'new', name: '/novo', description: 'Começa uma conversa nova' }, ...APP_COMMANDS.map(([key, description]) => ({ key, name: `/${key}`, description }))],
-        settings: { model: config.model ?? 'claude:', effort: config.effort ?? '', mode: config.mode ?? 'acceptEdits' },
+        agentError: init ? '' : 'O Claude Code não respondeu. Confira se o comando claude está instalado e logado e rode detro de novo.',
+        models: [...(claudeModels.length ? claudeModels : FALLBACK_MODELS), ...(await ollamaModels(settings.ollamaUrl))],
+        appCommands: [...appNames],
+        commands: [
+          { key: 'novo', name: '/novo', description: 'Começa uma conversa nova' },
+          ...APP_COMMANDS.map(([key, description]) => ({ key, name: `/${key}`, description })),
+          ...(init?.commands ?? []).filter((c) => !appNames.has(c.name)).map((c) => ({ key: `claude-${c.name}`, name: `/${c.name}`, description: c.description.split(/(?<=\.)\s/)[0].slice(0, 110) })),
+        ],
+        settings: { model: settings.model, effort: settings.effort, mode: settings.mode },
       };
     },
     'POST /api/settings': async (request) => {
       const { model, effort, mode } = await readBody(request);
       await saveSettings(projectDir, { model, effort, mode });
+      await ensureSession(await settingsOf(projectDir));
+      return {};
+    },
+    'POST /api/send': async (request) => {
+      const { text, images = [] } = await readBody(request);
+      const current = await ensureSession(await settingsOf(projectDir));
+      if (!busy) {
+        record?.end();
+        record = createWriteStream(path.join(projectDir, '.detro', 'last-turn.ndjson')).on('error', () => {});
+      }
+      const content = images.length
+        ? [...images.map(({ mediaType, data }) => ({ type: 'image', source: { type: 'base64', media_type: mediaType, data } })), { type: 'text', text }]
+        : text;
+      write(current, { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null });
+      busy = true;
+      broadcast({ type: 'user_prompt', text, images: images.map(({ mediaType, data }) => `data:${mediaType};base64,${data}`) });
+      return {};
+    },
+    'POST /api/permission': async (request) => {
+      const { requestId, behavior, updatedInput, updatedPermissions, message } = await readBody(request);
+      if (!session) throw new Error('A conversa não está mais aberta. Mande a mensagem de novo.');
+      const response = behavior === 'allow'
+        ? { behavior, updatedInput, ...(updatedPermissions && { updatedPermissions }) }
+        : { behavior, message: message || 'O usuário recusou.' };
+      write(session, { type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
+      broadcast({ type: 'permission_answer', requestId, behavior });
+      return {};
+    },
+    'POST /api/interrupt': async () => {
+      if (session && busy) {
+        control(session, { subtype: 'interrupt' });
+        broadcast({ type: 'interrupted' });
+      }
       return {};
     },
     'POST /api/new': async () => {
+      closeSession();
       sessionId = null;
+      busy = false;
+      history = [];
+      broadcast({ type: 'reset' }, false);
+      settingsOf(projectDir).then(ensureSession).catch(() => {});
+      return {};
+    },
+    'POST /api/app': async (request) => {
+      const { args } = await readBody(request);
+      if (!APP_COMMANDS.some(([name]) => name === args[0])) throw new Error(`Comando desconhecido: ${args[0]}`);
+      if (app) throw new Error('Já tem um comando do ambiente rodando. Pare ele antes de mandar outro.');
+      const child = spawn(appScript, args, { cwd: projectDir, env: { ...process.env, FORCE_COLOR: '0' }, detached: true });
+      app = { child, stopped: false, error: '' };
+      const current = app;
+      broadcast({ type: 'app_start', command: `/${args.join(' ')}` });
+      const out = (line) => broadcast({ type: 'app_out', text: `${line}\n` });
+      eachLine(child.stdout, out);
+      eachLine(child.stderr, out);
+      child.on('error', (error) => {
+        current.error = `Não foi possível executar ${appScript} (${error.message}). Confira se ele existe e é executável.`;
+      });
+      child.on('close', (code, signal) => {
+        app = null;
+        broadcast({ type: 'app_exit', code: code ?? 1, stopped: current.stopped || Boolean(signal), error: current.error });
+      });
       return {};
     },
     'POST /api/stop': async () => {
-      stopRunning('SIGINT');
+      if (app) {
+        app.stopped = true;
+        killGroup(app.child, 'SIGINT');
+      }
       return {};
-    },
-    'POST /api/agent': async (request, response) => {
-      const body = await readBody(request);
-      stream(response, await agentProcess({ projectDir, config: await loadConfig(projectDir), sessionId, ...body }), agentLine, true);
-    },
-    'POST /api/app': async (request, response) => {
-      const { args } = await readBody(request);
-      if (!APP_COMMANDS.some(([name]) => name === args[0])) throw new Error(`Comando desconhecido: ${args[0]}`);
-      stream(response, spawn(appScript, args, { cwd: projectDir, env: { ...process.env, FORCE_COLOR: '0' }, detached: true }), appLine, false);
     },
   };
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost');
+    if (url.pathname === '/api/events') {
+      if (url.searchParams.get('t') !== token) return response.writeHead(403).end();
+      response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+      for (const event of [{ type: 'reset' }, ...history]) response.write(`data: ${JSON.stringify(event)}\n\n`);
+      clients.add(response);
+      request.on('close', () => clients.delete(response));
+      return;
+    }
     const route = routes[`${request.method} ${url.pathname}`];
     if (!route) {
       const file = path.join(DIST, path.normalize(url.pathname === '/' ? '/index.html' : url.pathname));
@@ -206,17 +325,22 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
       return createReadStream(file).pipe(response);
     }
     if (request.headers['x-detro-token'] !== token) return response.writeHead(403).end();
-    if (running && /agent|app/.test(url.pathname)) return response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Já tem uma tarefa rodando. Pare ela antes de mandar outra.' }));
     try {
-      const result = await route(request, response);
-      if (result) response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await route(request)));
     } catch (error) {
-      if (!response.headersSent) response.writeHead(400, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ error: error.message }));
+      response.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: error.message }));
     }
   });
 
-  return new Promise((resolve) => {
-    server.listen(port, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${server.address().port}/?t=${token}`, close: () => { stopRunning('SIGTERM'); server.close(); } }));
+  return new Promise((resolve, reject) => {
+    server.on('error', (error) => reject(new Error(error.code === 'EADDRINUSE' ? `A porta ${port} já está em uso. Feche o outro detro ou rode sem DETRO_PORT.` : error.message)));
+    server.listen(port, '127.0.0.1', () => resolve({
+      url: `http://127.0.0.1:${server.address().port}/?t=${token}`,
+      close: () => {
+        closeSession();
+        if (app) killGroup(app.child);
+        server.close();
+      },
+    }));
   });
 }

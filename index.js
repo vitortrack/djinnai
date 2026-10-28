@@ -37,7 +37,10 @@ if (['version', '--version', '-v'].includes(args[0])) {
     })
     .on('close', (code) => process.exit(code ?? 1));
 } else {
-  const { url, close } = await startServer({ projectDir, appScript, version, port: Number(process.env.DETRO_PORT) || 0 });
+  const { url, close } = await startServer({ projectDir, appScript, version, port: Number(process.env.DETRO_PORT) || 0 }).catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
   console.log(`detro ${version} — ${projectDir}\n\n  ${url}\n\nCtrl+C encerra.`);
   const opener = { darwin: ['open'], win32: ['cmd', '/c', 'start', ''] }[process.platform] ?? ['xdg-open'];
   spawn(opener[0], [...opener.slice(1), url], { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
