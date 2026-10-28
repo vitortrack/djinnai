@@ -14,7 +14,7 @@
 ```bash
 npm install -g @vitortrack777/detro
 cd meu-projeto
-detro              # abre a tela numa janela própria
+detro              # abre o aplicativo (detro --navegador abre no navegador)
 detro restart api  # os comandos do ambiente continuam funcionando direto no terminal
 ```
 
@@ -22,10 +22,17 @@ detro restart api  # os comandos do ambiente continuam funcionando direto no ter
 
 ## Como funciona
 
-`detro` sobe um servidor em `127.0.0.1`, numa porta livre, e abre a tela numa **janela própria**, no
-modo aplicativo do Chrome, Edge ou Chromium (`--app`), sem abas nem barra de endereço, no Linux, no
-Windows e no macOS. A janela usa um perfil temporário, sem as extensões do seu navegador, e **fechar a
-janela encerra o detro**. Sem nenhum desses navegadores instalado, a tela abre no navegador padrão. A conversa é
+`detro` sobe um servidor em `127.0.0.1`, numa porta livre, e abre a tela num **aplicativo de desktop**
+(Electron, que vem com o pacote), no Linux, no Windows e no macOS, sem depender de navegador.
+**Fechar a janela encerra o detro.** O endereço também aparece no terminal: dá para abrir no
+navegador ao mesmo tempo, e as duas telas mostram a mesma conversa.
+
+| Comando | Abre |
+|---|---|
+| `detro` | A janela do aplicativo. Se ela não abrir (sem ambiente gráfico, por exemplo), cai no navegador padrão |
+| `detro --navegador` | Só o navegador padrão, como numa aba comum |
+
+A conversa é
 uma sessão do Claude Code aberta na raiz do projeto, no mesmo protocolo que o Agent SDK usa
 (`stream-json` de entrada e saída). Por isso a tela tem o que o Claude Code tem:
 
@@ -125,4 +132,5 @@ bash ./detro.sh install     # npm ci + build da tela + npm link + autocompletar 
 
 A tela é React + Vite e usa componentes do [React Bits](https://reactbits.dev) (PromptBar,
 ThoughtLine, LatticeLoader, StatusMark, RubberSegment), copiados para `web/src/components/`. O
-servidor (`server.js`) usa só a biblioteca padrão do Node, então o pacote publicado não tem dependências.
+servidor (`server.js`) usa só a biblioteca padrão do Node; a única dependência do pacote é o Electron,
+que desenha a janela (`window.cjs`).

@@ -11,6 +11,7 @@
     "test": "node web/src/lib/markdown.test.js && node web/src/lib/turns.test.js",
     "build": "vite build --config web/vite.config.js",
     "prepublishOnly": "npm run build",
+    "postinstall": "node -e \"try { require('electron') } catch {}\"",
     "setup": "bash ./detro.sh install",
     "update": "bash ./detro.sh update",
     "uninstall-cli": "bash ./detro.sh uninstall"
@@ -22,6 +23,7 @@
   "files": [
     "index.js",
     "server.js",
+    "window.cjs",
     "web/dist/",
     "detro.sh",
     "detro-completion.bash",
@@ -57,5 +59,8 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "vite": "^6.4.5"
+  },
+  "dependencies": {
+    "electron": "44.7.1"
   }
 }
