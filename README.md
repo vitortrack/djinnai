@@ -51,7 +51,7 @@ o pedido, o modelo, o esforço e o modo de permissão, mais o contexto do projet
 
 | Requisito | Para quê |
 |---|---|
-| [Node.js](https://nodejs.org) 20+ | Executar o detro |
+| [Node.js](https://nodejs.org) 22.12+ (recomendado: 24 LTS) | Executar o detro e o Electron |
 | [Claude Code](https://docs.anthropic.com/claude-code) instalado e logado (`claude`) | O agente |
 | [Ollama](https://ollama.com) 0.14+ (opcional) | Usar modelos do Ollama como agente |
 | Script `appDev` ou `app` na raiz (opcional) | Os comandos do ambiente (`/start`, `/logs`…) |
