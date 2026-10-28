@@ -1,20 +1,19 @@
 {
   "name": "@vitortrack777/detro",
   "version": "0.1.22",
-  "description": "detro CLI: CLI de desenvolvimento com IA que gera CRUDs completos (banco, API e tela) e corrige código com Ollama, revisado pelo Claude Code. NestJS, React, TypeScript e PostgreSQL.",
+  "description": "detro: tela web local para conversar com o agente do Claude Code (Claude ou modelos do Ollama) e rodar os comandos do ambiente do projeto.",
   "type": "module",
   "bin": {
     "detro": "./index.js"
   },
   "scripts": {
     "start": "node index.js",
+    "test": "node web/src/lib/markdown.test.js",
+    "build": "vite build --config web/vite.config.js",
+    "prepublishOnly": "npm run build",
     "setup": "bash ./detro.sh install",
     "update": "bash ./detro.sh update",
     "uninstall-cli": "bash ./detro.sh uninstall"
-  },
-  "dependencies": {
-    "@inquirer/prompts": "^7.8.0",
-    "chalk": "^5.4.1"
   },
   "license": "MIT",
   "engines": {
@@ -22,31 +21,20 @@
   },
   "files": [
     "index.js",
-    "ai/",
+    "server.js",
+    "web/dist/",
     "detro.sh",
     "detro-completion.bash",
     "LICENSE"
   ],
   "keywords": [
     "detro",
-    "detro-cli",
     "cli",
     "ai",
-    "ia",
-    "llm",
-    "ollama",
     "claude",
     "claude-code",
-    "codegen",
-    "code-generator",
-    "crud-generator",
-    "gerador-de-crud",
-    "gerador-de-codigo",
-    "scaffolding",
-    "nestjs",
-    "react",
-    "typescript",
-    "postgresql"
+    "ollama",
+    "agent"
   ],
   "author": "vitortrack",
   "repository": {
@@ -59,5 +47,15 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@hugeicons/core-free-icons": "^4.3.5",
+    "@hugeicons/react": "^1.1.10",
+    "@vitejs/plugin-react": "^4.7.0",
+    "marked": "^15.0.12",
+    "motion": "^12.43.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^6.4.5"
   }
 }

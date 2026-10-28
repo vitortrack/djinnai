@@ -80,6 +80,9 @@ install_dependencies() {
     else
         npm install --no-audit --no-fund
     fi
+
+    info "Gerando a tela web..."
+    npm run build
 }
 
 install_cli() {
