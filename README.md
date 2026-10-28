@@ -50,6 +50,7 @@ o pedido, o modelo, o esforço e o modo de permissão, mais o contexto do projet
 
 | Parte | O que faz |
 |---|---|
+| Contexto e **Nova conversa**, no topo | Quantos tokens a conversa já carrega (o agente relê tudo a cada passo). Acima de 100k a tela sugere uma conversa nova; o botão (ou `/novo`) começa uma sessão limpa. Cada `detro` também começa numa sessão nova |
 | Caixa de pedido | Enter envia, Shift+Enter quebra a linha. Com o agente trabalhando, Enter põe a mensagem na fila e o botão vira **parar** |
 | `/` | Lista `/novo` (conversa nova), os comandos do ambiente (`/start`, `/restart api`, `/logs --tail=100 api`, `/status`…) e as skills do Claude Code. A saída do ambiente aparece na tela, e o botão de parar encerra o comando (útil no `logs -f`) |
 | Seletor de modelo | Os modelos que a sua conta do Claude Code oferece ou qualquer modelo instalado no Ollama. O modelo do Ollama roda **dentro do Claude Code**, com as mesmas ferramentas e os mesmos `CLAUDE.md` |

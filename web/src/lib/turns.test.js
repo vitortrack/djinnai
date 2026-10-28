@@ -52,4 +52,6 @@ assert.equal(turns[0].status, 'done');
 turns = run([{ type: 'user_prompt', text: 'a' }, { type: 'result', is_error: true, result: 'boom' }, { type: 'system', subtype: 'session_state_changed', state: 'idle' }]);
 assert.equal(turns[0].status, 'error');
 assert.equal(turns[0].error, 'boom');
+turns = run([{ type: 'user_prompt', text: 'a' }, A([{ type: 'text', text: 'x' }], {}), { type: 'assistant', message: { content: [], usage: { input_tokens: 10, cache_read_input_tokens: 90000 } } }]);
+assert.equal(turns[0].context, 90010);
 console.log('ok');

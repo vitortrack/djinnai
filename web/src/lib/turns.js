@@ -41,6 +41,8 @@ function agentEvent(turn, event, root) {
     }
     if (event.event?.type === 'content_block_start' && event.event.content_block?.type === 'thinking') turn.thought = true;
   } else if (event.type === 'assistant') {
+    const usage = event.message?.usage;
+    if (usage) turn.context = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
     for (const part of parts) {
       if (part.type === 'thinking') {
         turn.thought = true;

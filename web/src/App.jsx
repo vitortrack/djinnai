@@ -17,6 +17,7 @@ const MODES = [
 ];
 const EFFORTS = { Baixo: 'low', Médio: 'medium', Alto: 'high', 'Muito alto': 'xhigh', Máximo: 'max' };
 const EFFORT_LABELS = Object.keys(EFFORTS);
+const CONTEXT_WARNING = 100000;
 const LOST = 'A conexão com o detro caiu. Rode detro de novo no terminal e use o endereço novo que ele mostrar.';
 
 const thousands = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -136,6 +137,7 @@ export default function App() {
   const endRef = useRef(null);
   const agentBusy = turns.some((turn) => turn.kind === 'agent' && turn.status === 'working');
   const appBusy = turns.some((turn) => turn.kind === 'app' && turn.status === 'working');
+  const context = turns.findLast((turn) => turn.context)?.context ?? 0;
 
   useEffect(() => {
     api('state')
@@ -218,7 +220,11 @@ export default function App() {
           <div className="app__title">detro</div>
           <div className="app__meta">{state.project}{state.branch ? ` · ${state.branch}` : ''} · v{state.version}</div>
         </div>
-        <RubberSegment items={MODES} value={mode} onChange={changeMode} size="sm" aria-label="Modo de permissão" />
+        <div className="app__controls">
+          {context ? <span className="app__context" data-warn={context > CONTEXT_WARNING ? '' : undefined} title="Tokens que o agente relê a cada passo desta conversa">contexto {thousands(context)}</span> : null}
+          <button type="button" className="app__new" disabled={agentBusy} onClick={() => run(api('new', {}))}>Nova conversa</button>
+          <RubberSegment items={MODES} value={mode} onChange={changeMode} size="sm" aria-label="Modo de permissão" />
+        </div>
       </header>
 
       <div className="app__turns">
@@ -239,6 +245,11 @@ export default function App() {
       <div className="app__composer">
         {!connected ? <div className="turn__error">{LOST}</div> : null}
         {notice ? <div className="turn__warning">{notice}</div> : null}
+        {context > CONTEXT_WARNING && !agentBusy ? (
+          <div className="turn__warning">
+            Esta conversa já carrega {thousands(context)} tokens de contexto, relidos a cada passo. Se o próximo pedido é outro assunto, comece uma <b>Nova conversa</b>.
+          </div>
+        ) : null}
         {images.length ? (
           <div className="app__attachments">
             {images.map(({ url }, i) => (

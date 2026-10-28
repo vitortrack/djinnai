@@ -43,6 +43,11 @@ body {
 
 .app__title { font-size: 18px; font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }
 .app__meta { color: var(--muted); font-size: 12px; }
+.app__controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.app__context { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.app__context[data-warn] { color: var(--warn); }
+.app__new { font: inherit; font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+.app__new:disabled { opacity: 0.5; cursor: default; }
 
 .app__turns { flex: 1; overflow-y: auto; padding: 20px 0; display: flex; flex-direction: column; gap: 28px; }
 .app__hint { color: var(--muted); max-width: 560px; margin: 15vh auto 0; text-align: center; }
