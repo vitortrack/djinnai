@@ -27,21 +27,32 @@ function api(route, body) {
   });
 }
 
-async function readStream(response, onEvent) {
-  if (!response.ok) {
-    const { error } = await response.json().catch(() => ({}));
-    onEvent({ type: 'exit', code: 1, error: error ?? `O detro respondeu ${response.status}. Reinicie o detro no terminal.` });
-    return;
-  }
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-  let pending = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) return;
-    const lines = (pending + value).split('\n');
-    pending = lines.pop();
-    for (const line of lines) if (line) onEvent(JSON.parse(line));
-  }
+const LOST = 'A conexão com o detro caiu. Rode detro de novo no terminal e use o endereço novo que ele mostrar.';
+
+async function readStream(request, onEvent) {
+  let exited = false;
+  try {
+    const response = await request;
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({}));
+      onEvent({ type: 'exit', code: 1, error: error ?? `O detro respondeu ${response.status}. Rode detro de novo no terminal.` });
+      return;
+    }
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    let pending = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const lines = (pending + value).split('\n');
+      pending = lines.pop();
+      for (const line of lines.filter(Boolean)) {
+        const event = JSON.parse(line);
+        exited ||= event.type === 'exit';
+        onEvent(event);
+      }
+    }
+  } catch {}
+  if (!exited) onEvent({ type: 'exit', code: 1, error: LOST });
 }
 
 function toolTarget(input = {}, root) {
@@ -166,9 +177,9 @@ export default function App() {
     start(text);
     const onEvent = (event) => update((turn) => reduce(turn, event, state.projectDir));
     if (state.commands.some((c) => c.name === command)) {
-      await readStream(await api('app', { args: [command.slice(1), ...args] }), onEvent);
+      await readStream(api('app', { args: [command.slice(1), ...args] }), onEvent);
     } else {
-      await readStream(await api('agent', { prompt: text, ...settings }), onEvent);
+      await readStream(api('agent', { prompt: text, ...settings }), onEvent);
     }
   };
 
