@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Component, useEffect, useRef, useState } from 'react';
 import LatticeLoader from './components/LatticeLoader.jsx';
 import PromptBar from './components/PromptBar.jsx';
 import RubberSegment from './components/RubberSegment.jsx';
@@ -55,7 +55,8 @@ async function readStream(request, onEvent) {
   if (!exited) onEvent({ type: 'exit', code: 1, error: LOST });
 }
 
-function toolTarget(input = {}, root) {
+function toolTarget(input, root) {
+  input ??= {};
   const target = input.file_path ?? input.path ?? input.pattern ?? input.command ?? input.skill ?? input.url ?? input.query ?? input.description ?? '';
   return oneLine(String(target).replace(`${root}/`, ''), 120);
 }
@@ -83,7 +84,7 @@ function reduce(turn, event, root) {
   } else if (event.type === 'exit') {
     next.status = event.code && !event.stopped ? 'error' : 'done';
     next.stopped = event.stopped;
-    next.error = event.error ?? (next.result?.is_error ? oneLine(next.result.result, 600) : undefined);
+    next.error = event.error ?? next.error ?? (next.result?.is_error ? oneLine(next.result.result, 600) : undefined);
     next.items = next.items.map((item) => (item.status === 'running' ? { ...item, status: 'cancelled' } : item));
   }
   return next;
@@ -98,6 +99,32 @@ function Usage({ result }) {
       {thousands(input + (usage.output_tokens ?? 0))} tokens · entrada {thousands(input)} ({thousands(usage.cache_read_input_tokens ?? 0)} do cache) · saída {thousands(usage.output_tokens ?? 0)}
     </div>
   );
+}
+
+class TurnBoundary extends Component {
+  state = { error: null };
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <section className="turn">
+        <div className="turn__prompt">{this.props.prompt}</div>
+        <div className="turn__error">Não consegui mostrar esta resposta ({this.state.error.message}). O último retorno do agente está em .detro/last-turn.ndjson.</div>
+      </section>
+    );
+  }
+}
+
+function safeReduce(turn, event, root) {
+  try {
+    return reduce(turn, event, root);
+  } catch (error) {
+    return { ...turn, error: `Não consegui mostrar um evento do agente (${error.message}). O último retorno do agente está em .detro/last-turn.ndjson.` };
+  }
 }
 
 function Turn({ turn }) {
@@ -162,7 +189,7 @@ export default function App() {
 
   if (!state) return <main className="app app--empty">{loadError || 'Carregando…'}</main>;
 
-  const update = (fn) => setTurns((list) => [...list.slice(0, -1), fn(list.at(-1))]);
+  const update = (fn) => setTurns((list) => (list.length ? [...list.slice(0, -1), fn(list.at(-1))] : list));
   const start = (prompt) => setTurns((list) => [...list, { prompt, thinking: [], items: [], status: 'working' }]);
 
   const send = async (text, { model, effort }) => {
@@ -175,7 +202,7 @@ export default function App() {
       return;
     }
     start(text);
-    const onEvent = (event) => update((turn) => reduce(turn, event, state.projectDir));
+    const onEvent = (event) => update((turn) => safeReduce(turn, event, state.projectDir));
     if (state.commands.some((c) => c.name === command)) {
       await readStream(api('app', { args: [command.slice(1), ...args] }), onEvent);
     } else {
@@ -207,7 +234,7 @@ export default function App() {
             O modelo escolhido abaixo define quem atende: Claude ou um modelo do Ollama rodando dentro do Claude Code.
           </div>
         ) : null}
-        {turns.map((turn, i) => <Turn key={i} turn={turn} />)}
+        {turns.map((turn, i) => <TurnBoundary key={i} prompt={turn.prompt}><Turn turn={turn} /></TurnBoundary>)}
         <div ref={endRef} />
       </div>
 

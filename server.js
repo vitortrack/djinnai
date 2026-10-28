@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -100,6 +100,7 @@ const readBody = async (request) => {
 
 export function startServer({ projectDir, appScript, version, port = 0 }) {
   const token = randomBytes(16).toString('hex');
+  mkdirSync(path.join(projectDir, '.detro'), { recursive: true });
   let running = null;
   let sessionId = null;
   let stopped = false;
@@ -119,11 +120,15 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
     let pending = '';
     let errors = '';
     let spawnError = '';
+    const record = isAgent ? createWriteStream(path.join(projectDir, '.detro', 'last-turn.ndjson')).on('error', () => {}) : null;
     child.stdout.on('data', (chunk) => {
       pending += chunk;
       const lines = pending.split('\n');
       pending = lines.pop();
-      for (const line of lines) if (line.trim()) onLine(line, send);
+      for (const line of lines.filter((l) => l.trim())) {
+        record?.write(`${line}\n`);
+        onLine(line, send);
+      }
     });
     child.stderr.on('data', (chunk) => {
       errors += chunk;
@@ -134,6 +139,7 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
     });
     child.on('close', (code, signal) => {
       running = null;
+      record?.end();
       if (pending.trim()) onLine(pending, send);
       const error = spawnError || (code && !stopped && isAgent ? errors.trim().slice(-600) : undefined);
       send({ type: 'exit', code: code ?? 1, stopped: stopped || Boolean(signal), error });

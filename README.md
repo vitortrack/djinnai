@@ -79,6 +79,8 @@ O modelo, o esforço e o modo escolhidos na tela ficam salvos em `.detro/config.
 }
 ```
 
+O retorno bruto da última resposta do agente fica em `.detro/last-turn.ndjson`, para diagnóstico.
+
 | Variável de ambiente | Descrição |
 |---|---|
 | `DETRO_PORT` | Porta fixa no lugar de uma porta livre |
