@@ -1,29 +1,29 @@
 import { Component, useEffect, useRef, useState } from 'react';
 import LatticeLoader from './components/LatticeLoader.jsx';
 import PromptBar from './components/PromptBar.jsx';
-import RubberSegment from './components/RubberSegment.jsx';
+import GlideSelect from './components/GlideSelect.jsx';
 import StatusMark from './components/StatusMark.jsx';
 import ThoughtLine from './components/ThoughtLine.jsx';
+import WarmTooltip, { WarmTooltipGroup } from './components/WarmTooltip.jsx';
 import PermissionCard from './PermissionCard.jsx';
+import Sidebar from './Sidebar.jsx';
 import UsageDialog, { PlanMeter } from './UsageDialog.jsx';
+import { CONTEXT_WARNING, thousands } from './lib/format.js';
 import { isNearLimit, limitLabel, relevantLimits, resetsAt } from './lib/limits.js';
 import { toHtml } from './lib/markdown.js';
 import { applyEvent, oneLine, toolTarget } from './lib/turns.js';
 
 const TOKEN = new URLSearchParams(location.search).get('t');
 const MODES = [
-  { value: 'plan', label: 'Planejar' },
-  { value: 'manual', label: 'Perguntar' },
-  { value: 'acceptEdits', label: 'Editar' },
-  { value: 'auto', label: 'Automático' },
+  { value: 'plan', label: 'Planejar', tag: 'só planeja; você aprova antes' },
+  { value: 'manual', label: 'Perguntar', tag: 'pede permissão a cada edição' },
+  { value: 'acceptEdits', label: 'Editar', tag: 'edita sem perguntar' },
+  { value: 'auto', label: 'Automático', tag: 'o Claude decide o que é seguro' },
 ];
 const EFFORTS = { Baixo: 'low', Médio: 'medium', Alto: 'high', 'Muito alto': 'xhigh', Máximo: 'max' };
 const EFFORT_LABELS = Object.keys(EFFORTS);
-const CONTEXT_WARNING = 100000;
 const PLAN_REFRESH_MS = 5 * 60 * 1000;
 const LOST = 'A conexão com o DjinnAI caiu. Rode djinn de novo no terminal e use o endereço novo que ele mostrar.';
-
-const thousands = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 async function api(route, body) {
   try {
@@ -116,13 +116,13 @@ function Turn({ turn, root, onAnswer, onApprovePlan }) {
       ) : null}
       {turn.error ? <div className="turn__error">{turn.error}</div> : null}
       <div className="turn__footer">
-        <LatticeLoader
+        {turn.replayed ? null : <LatticeLoader
           label="Trabalhando"
           doneLabel={turn.stopped ? 'Interrompido em' : 'Concluído em'}
           errorLabel="Falhou após"
           status={turn.status}
           fontSize={13}
-        />
+        />}
         <Usage usage={turn.usage} />
       </div>
     </section>
@@ -140,6 +140,8 @@ export default function App() {
   const [usage, setUsage] = useState(null);
   const [plan, setPlan] = useState(null);
   const [modelName, setModelName] = useState('');
+  const [sessions, setSessions] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const endRef = useRef(null);
   const agentBusy = turns.some((turn) => turn.kind === 'agent' && turn.status === 'working');
   const appBusy = turns.some((turn) => turn.kind === 'app' && turn.status === 'working');
@@ -206,7 +208,9 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
-    if (state && !agentBusy) api('usage').then(setPlan, () => {});
+    if (!state || agentBusy) return;
+    api('usage').then(setPlan, () => {});
+    api('sessions').then((data) => setSessions(data.sessions), () => {});
   }, [state, agentBusy]);
 
   if (!state) return <main className="app app--empty">{loadError || 'Abrindo o agente…'}</main>;
@@ -224,13 +228,20 @@ export default function App() {
     );
   };
 
+  const loadSessions = () => api('sessions').then((data) => setSessions(data.sessions), () => {});
+  const newConversation = () => run(api('new', {}).then(loadSessions));
+  const resume = (id) => {
+    setSidebarOpen(false);
+    return run(api('resume', { id }).then(loadSessions));
+  };
+
   const limits = relevantLimits(plan?.limits, modelName);
   const nearLimits = limits.filter(isNearLimit);
 
   const send = async (text, { model, effort }) => {
     const [command, ...args] = text.split(/\s+/);
     const name = command.slice(1);
-    if (command === '/novo') return run(api('new', {}));
+    if (command === '/novo') return newConversation();
     if (command === '/usage') return openUsage();
     if (command.startsWith('/') && state.appCommands.includes(name)) return run(api('app', { args: [name, ...args] }));
     const settings = { model: model.key, effort: EFFORTS[effort], mode };
@@ -248,18 +259,32 @@ export default function App() {
   const effortLabel = Object.entries(EFFORTS).find(([, value]) => value === state.settings.effort)?.[0] ?? 'Alto';
 
   return (
+    <div className="shell" data-sidebar={sidebarOpen ? '' : undefined}>
+      <Sidebar sessions={sessions} version={state.version} busy={agentBusy} onNew={newConversation} onResume={resume} />
+      <button type="button" className="shell__scrim" aria-label="Fechar conversas" onClick={() => setSidebarOpen(false)} />
     <main className="app">
       <header className="app__header">
-        <div>
-          <div className="app__title">DjinnAI</div>
-          <div className="app__meta">{state.project}{state.branch ? ` · ${state.branch}` : ''} · v{state.version}</div>
+        <div className="app__where">
+          <button type="button" className="app__menu" aria-label="Conversas" onClick={() => setSidebarOpen(true)}>☰</button>
+          <div>
+            <div className="app__project">{state.project}</div>
+            {state.branch ? <div className="app__meta">branch {state.branch}</div> : null}
+          </div>
         </div>
-        <div className="app__controls">
-          <PlanMeter limits={limits} onOpen={openUsage} />
-          {context ? <span className="app__context" data-warn={context > CONTEXT_WARNING ? '' : undefined} title="Tokens que o agente relê a cada passo desta conversa">contexto {thousands(context)}</span> : null}
-          <button type="button" className="app__new" disabled={agentBusy} onClick={() => run(api('new', {}))}>Nova conversa</button>
-          <RubberSegment items={MODES} value={mode} onChange={changeMode} size="sm" aria-label="Modo de permissão" />
-        </div>
+        <WarmTooltipGroup>
+          <div className="app__controls">
+            {limits.length ? (
+              <WarmTooltip side="bottom" content={limits.map((limit) => `${limitLabel(limit)}: renova ${resetsAt(limit.resets_at)}`).join(' · ')}>
+                <PlanMeter limits={limits} onOpen={openUsage} />
+              </WarmTooltip>
+            ) : null}
+            {context ? (
+              <WarmTooltip side="bottom" content="Tokens que o agente relê a cada passo desta conversa. Quanto menor, mais barato e rápido.">
+                <span className="app__context" data-warn={context > CONTEXT_WARNING ? '' : undefined}>contexto {thousands(context)}</span>
+              </WarmTooltip>
+            ) : null}
+          </div>
+        </WarmTooltipGroup>
       </header>
 
       <div className="app__turns">
@@ -315,8 +340,24 @@ export default function App() {
           width={820}
           maxRows={10}
         />
+        <div className="app__bar">
+          <span className="app__bar-label">Modo</span>
+          <GlideSelect
+            options={MODES}
+            value={mode}
+            onChange={changeMode}
+            placement="top"
+            menuWidth={330}
+            size="sm"
+            surfaceColor="#232327"
+            highlightColor="#2f2f35"
+            ariaLabel="Modo de permissão"
+          />
+          <span className="app__keys">Enter envia · Shift+Enter quebra a linha · <b>/</b> comandos e skills · Ctrl+V cola print</span>
+        </div>
       </div>
       {usage ? <UsageDialog data={usage.data} error={usage.error} onClose={() => setUsage(null)} /> : null}
     </main>
+    </div>
   );
 }

@@ -1,12 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { isNearLimit, limitLabel, resetsAt, scopeName, shortLabel } from './lib/limits.js';
 
-export function PlanMeter({ limits, onOpen }) {
-  if (!limits?.length) return null;
+export function PlanMeter({ limits, onOpen, ...rest }) {
   return (
-    <button type="button" className="app__plan" onClick={onOpen} title="Limites do plano do Claude. Clique para ver o uso por modelo">
+    <button type="button" className="app__plan" onClick={onOpen} {...rest}>
       {limits.map((limit) => (
-        <span key={`${limit.kind}-${scopeName(limit)}`} data-warn={isNearLimit(limit) ? '' : undefined} title={limit.resets_at ? `${limitLabel(limit)}: renova ${resetsAt(limit.resets_at)}` : undefined}>
+        <span key={`${limit.kind}-${scopeName(limit)}`} data-warn={isNearLimit(limit) ? '' : undefined}>
           {shortLabel(limit)} {limit.percent}%
         </span>
       ))}

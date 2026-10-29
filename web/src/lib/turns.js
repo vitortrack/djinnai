@@ -77,7 +77,7 @@ export function applyEvent(turns, event, root) {
         ? { ...turn, live: '', items: [...turn.items, ...(turn.live ? [{ kind: 'text', text: turn.live }] : []), { kind: 'prompt', text: event.text, images: event.images ?? [] }] }
         : turn));
     }
-    return [...turns, { kind: 'agent', prompt: event.text, images: event.images ?? [], thinking: [], items: [], live: '', liveThinking: '', thought: false, status: 'working' }];
+    return [...turns, { kind: 'agent', prompt: event.text, images: event.images ?? [], thinking: [], items: [], live: '', liveThinking: '', thought: false, status: 'working', replayed: event.replayed }];
   }
   if (event.type === 'app_start') return [...turns, { kind: 'app', prompt: event.command, log: '', thinking: [], items: [], status: 'working' }];
   if (event.type === 'app_out') return patchLast(turns, 'app', (turn) => ({ ...turn, log: turn.log + event.text }));

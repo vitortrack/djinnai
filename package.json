@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node web/src/lib/markdown.test.js && node web/src/lib/turns.test.js && node web/src/lib/limits.test.js",
+    "test": "node sessions.test.js && node web/src/lib/markdown.test.js && node web/src/lib/turns.test.js && node web/src/lib/limits.test.js",
     "build": "vite build --config web/vite.config.js",
     "prepublishOnly": "npm run build",
     "setup": "bash ./djinn.sh install",
@@ -23,6 +23,7 @@
   "files": [
     "index.js",
     "server.js",
+    "sessions.js",
     "window.cjs",
     "web/dist/",
     "djinn.sh",

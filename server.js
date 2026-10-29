@@ -8,6 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
+import { listSessions, transcriptEvents } from './sessions.js';
+
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), 'web', 'dist');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 const OLLAMA_URL = 'http://127.0.0.1:11434';
@@ -15,6 +17,7 @@ const MAX_FOLDERS = 150;
 const INIT_TIMEOUT_MS = 20000;
 const USAGE_TIMEOUT_MS = 15000;
 const PLAN_CACHE_MS = 60000;
+const IN_USE_MS = 5 * 60 * 1000;
 
 const APP_COMMANDS = [
   ['start', 'Sobe o stack e builda só o que mudou'],
@@ -155,6 +158,8 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
   let history = [];
   let session = null;
   let sessionId = null;
+  let forkNext = false;
+  const ownSessions = new Set();
   let busy = false;
   let app = null;
   let record = null;
@@ -188,6 +193,8 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
     if (name !== 'default') args.push('--model', name);
     if (settings.effort) args.push('--effort', settings.effort);
     if (sessionId) args.push('--resume', sessionId);
+    if (sessionId && forkNext) args.push('--fork-session');
+    forkNext = false;
 
     const env = { ...process.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' };
     delete env.ANTHROPIC_API_KEY;
@@ -209,7 +216,10 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
       } catch {
         return;
       }
-      if (event.session_id) sessionId = event.session_id;
+      if (event.session_id) {
+        sessionId = event.session_id;
+        ownSessions.add(sessionId);
+      }
       if (event.type === 'control_response') {
         if (event.response?.request_id === initId) resolveInit(event.response.response ?? null);
         return;
@@ -337,6 +347,25 @@ export function startServer({ projectDir, appScript, version, port = 0 }) {
         control(session, { subtype: 'interrupt' });
         broadcast({ type: 'interrupted' });
       }
+      return {};
+    },
+    'GET /api/sessions': async () => {
+      const sessions = await listSessions(projectDir);
+      return { sessions: sessions.map((s) => ({ ...s, current: s.id === sessionId, inUse: !ownSessions.has(s.id) && Date.now() - s.updatedAt < IN_USE_MS })) };
+    },
+    'POST /api/resume': async (request) => {
+      const { id } = await readBody(request);
+      if (busy) throw new Error('O agente está trabalhando. Pare a resposta antes de trocar de conversa.');
+      const target = (await listSessions(projectDir)).find((s) => s.id === id);
+      if (!target) throw new Error('Não achei essa conversa. Atualize a lista e escolha de novo.');
+      const events = await transcriptEvents(projectDir, id);
+      forkNext = !ownSessions.has(id) && Date.now() - target.updatedAt < IN_USE_MS;
+      closeSession();
+      sessionId = id;
+      history = [];
+      broadcast({ type: 'reset' }, false);
+      for (const event of events) broadcast(event);
+      settingsOf(projectDir).then(ensureSession).catch(() => {});
       return {};
     },
     'POST /api/new': async () => {
